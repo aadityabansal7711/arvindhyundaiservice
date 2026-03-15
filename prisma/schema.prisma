@@ -40,18 +40,19 @@ model Branch {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  phone         String?
-  email         String    @unique
-  passwordHash  String
-  roleId        String
-  role          Role      @relation(fields: [roleId], references: [id])
-  branchId      String?
-  branch        Branch?   @relation(fields: [branchId], references: [id])
-  active        Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  phone            String?
+  email            String    @unique
+  passwordHash     String
+  supabaseAuthId   String?   @unique // links to Supabase auth.users.id for Auth sync
+  roleId           String
+  role             Role      @relation(fields: [roleId], references: [id])
+  branchId         String?
+  branch           Branch?   @relation(fields: [branchId], references: [id])
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   workNotes     WorkNote[]
   auditLogs     AuditLog[]
   importRuns    ImportRun[]

@@ -71,12 +71,13 @@ async function main() {
     }
 
     // 3. Create Admin / Owner users (100% access via Owner/Admin role)
+    // App owner: mayank.arvind.bansal@gmail.com — initial password admin123, change on first login
     const adminRole = await prisma.role.findUnique({ where: { name: 'Owner/Admin' } });
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
     const adminUsers = [
         { email: 'admin@dealerserviceops.com', name: 'Admin User' },
-        { email: 'mayank.arvind.bansal@gmail.com', name: 'Mayank Bansal' },
+        { email: 'mayank.arvind.bansal@gmail.com', name: 'Mayank Bansal' }, // App owner
     ];
 
     for (const { email, name } of adminUsers) {

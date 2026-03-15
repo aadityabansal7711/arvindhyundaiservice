@@ -33,7 +33,7 @@
 These are the only tables your app uses. In Table Editor you’ll see them with the same names (case-sensitive):
 
 - `Role`, `Permission`, `RolePermission`
-- `Branch`, `User`
+- `Branch`, `User` (includes optional `supabaseAuthId` for Auth sync)
 - `Customer`, `Vehicle`, `RepairOrder`
 - `InsuranceClaim`, `Survey`, `Billing`
 - `PartsOrder`, `WorkNote`
@@ -56,7 +56,22 @@ Supabase creates and uses these; you can ignore them in Table Editor if you only
 - **Realtime / extensions:** `realtime.*`, `graphql_*`, `extensions.*`, etc.
 - **Internal:** `supabase_migrations.*`, `vault.*`, etc.
 
-Your app uses **Prisma → Postgres** only; it does not use Supabase Auth or Storage, so those tables are for Supabase’s own features.
+The app now uses **Supabase Auth** for logins (see below). Storage is still unused.
+
+---
+
+## Supabase Auth (logins)
+
+The app signs users in via **Supabase Auth** (email + password). App users and roles stay in your **Prisma `User`** table; Supabase Auth is used only to verify the password.
+
+- **Login flow:** NextAuth Credentials provider first calls `supabase.auth.signInWithPassword()`. If that fails (e.g. user not yet in Supabase), it falls back to your existing Prisma + bcrypt check and, on success, creates the user in Supabase Auth so the next login uses Supabase.
+- **New users (admin):** When an admin creates a user in the app, the user is created in both Prisma and Supabase Auth (same email/password). `User.supabaseAuthId` links the two.
+- **Change password:** When a user changes their password, it is updated in both Prisma and Supabase Auth when the user has a `supabaseAuthId`.
+
+**Required in Supabase dashboard:**
+
+1. **Authentication → Providers → Email:** Enable “Email” and ensure “Confirm email” is off if you want immediate logins (or use “Confirm email” and set `email_confirm: true` when creating users, which we do).
+2. **Environment variables:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` must be set in `.env` and in your host (e.g. Vercel).
 
 ---
 

@@ -35,10 +35,13 @@ function LoginForm() {
 
             if (result?.error) {
                 setError("Invalid email or password");
-            } else if (password === "admin123") {
-                router.push("/set-password");
-            } else {
-                router.push("/dashboard");
+            } else if (result?.ok) {
+                // Force a full navigation so session (including mustChangePassword) is available on next page
+                if (password === "admin123") {
+                    window.location.href = "/set-password";
+                } else {
+                    window.location.href = "/dashboard";
+                }
             }
         } catch {
             setError("An unexpected error occurred");

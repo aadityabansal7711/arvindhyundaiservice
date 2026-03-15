@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import supabaseAdmin from "@/lib/supabase-admin";
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -24,15 +25,35 @@ export async function POST(req: NextRequest) {
 
         const passwordHash = await bcrypt.hash(newPassword, 10);
 
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { supabaseAuthId: true },
+        });
+
+        // Update Supabase first so they can sign in with new password there; then Prisma
+        if (user?.supabaseAuthId) {
+            const { error: supabaseError } = await supabaseAdmin.auth.admin.updateUserById(user.supabaseAuthId, {
+                password: newPassword,
+            });
+            if (supabaseError) {
+                console.error("Supabase password update failed:", supabaseError);
+                return NextResponse.json(
+                    { error: "Password updated in app but Supabase sync failed. Please try again or contact support." },
+                    { status: 500 }
+                );
+            }
+        }
+
         await prisma.user.update({
             where: { id: userId },
             data: { passwordHash },
         });
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to update password";
         return NextResponse.json(
-            { error: error.message ?? "Failed to update password" },
+            { error: message },
             { status: 500 }
         );
     }

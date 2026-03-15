@@ -34,7 +34,6 @@ export default function UserManagementPage() {
         phone: "",
         roleId: "",
         branchId: "",
-        password: "",
     });
     const [addSaving, setAddSaving] = useState(false);
     const [addError, setAddError] = useState("");
@@ -111,7 +110,6 @@ export default function UserManagementPage() {
             phone: "",
             roleId: metadata?.roles?.[0]?.id ?? "",
             branchId: "",
-            password: "",
         });
         setAddError("");
         setShowAddModal(true);
@@ -128,7 +126,6 @@ export default function UserManagementPage() {
                 phone: addForm.phone.trim() || undefined,
                 roleId: addForm.roleId || undefined,
                 branchId: addForm.branchId.trim() || undefined,
-                password: addForm.password,
             });
             setShowAddModal(false);
             await fetchUsers();
@@ -319,17 +316,8 @@ export default function UserManagementPage() {
                                     )}
                                 </>
                             )}
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Temporary password</label>
-                                <input
-                                    type="password"
-                                    value={addForm.password}
-                                    onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder="Min 6 characters"
-                                    minLength={6}
-                                    required
-                                />
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-800">
+                                New users get temporary password <strong>admin123</strong>. They must change it on first login; the new password is saved in Supabase instantly.
                             </div>
                             <div className="flex gap-2 pt-2">
                                 <button
