@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  permissions RolePermission[]
+  users       User[]
+}
+
+model Permission {
+  id    String @id @default(cuid())
+  key   String @unique
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+}
+
+model Branch {
+  id            String        @id @default(cuid())
+  name          String
+  city          String
+  users         User[]
+  repairOrders  RepairOrder[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  phone         String?
+  email         String    @unique
+  passwordHash  String
+  roleId        String
+  role          Role      @relation(fields: [roleId], references: [id])
+  branchId      String?
+  branch        Branch?   @relation(fields: [branchId], references: [id])
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  workNotes     WorkNote[]
+  auditLogs     AuditLog[]
+  importRuns    ImportRun[]
+  
+  // Relations for Repair Orders
+  advisedROs    RepairOrder[] @relation("Advisor")
+  dentedROs     RepairOrder[] @relation("Denter")
+  paintedROs    RepairOrder[] @relation("Painter")
+
+  @@index([active])
+}
+
+model Customer {
+  id       String    @id @default(cuid())
+  name     String
+  mobile   String
+  vehicles Vehicle[]
+}
+
+model Vehicle {
+  id             String        @id @default(cuid())
+  registrationNo String        @unique
+  model          String
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  repairOrders   RepairOrder[]
+}
+
+model RepairOrder {
+  id                    String   @id @default(cuid())
+  roNo                  String   @unique
+  vehicleId             String
+  vehicle               Vehicle  @relation(fields: [vehicleId], references: [id])
+  branchId              String?
+  branch                Branch?  @relation(fields: [branchId], references: [id])
+  vehicleInDate         DateTime
+  vehicleOutDate        DateTime?
+  currentStatus         String
+  advisorId             String?
+  advisor               User?    @relation("Advisor", fields: [advisorId], references: [id])
+  serviceAdvisorName    String?  // Configured name from Data page (Service Advisor options)
+  denterId              String?
+  denter                User?    @relation("Denter", fields: [denterId], references: [id])
+  painterId             String?
+  painter               User?    @relation("Painter", fields: [painterId], references: [id])
+  committedDeliveryDate DateTime?
+  photos                Json?     // Array of base64 strings (each compressed to ≤100KB)
+  workStartDate         DateTime?
+  tentativeCompletionDate DateTime?
+  panelsNewReplace      Int?
+  panelsDent            Int?
+
+  insuranceClaim        InsuranceClaim?
+  survey                Survey?
+  billing               Billing?
+  partsOrders           PartsOrder[]
+  workNotes             WorkNote[]
+
+  @@index([currentStatus])
+  @@index([vehicleInDate])
+  @@index([vehicleOutDate])
+  @@index([vehicleOutDate, vehicleInDate])
+  @@index([branchId])
+}
+
+model InsuranceClaim {
+  id                   String      @id @default(cuid())
+  roId                 String      @unique
+  repairOrder          RepairOrder @relation(fields: [roId], references: [id])
+  insuranceCompany     String
+  policyNo             String?
+  claimNo              String?
+  hapFlag              Boolean     @default(false)
+  claimIntimationDate  DateTime?
+}
+
+model Survey {
+  id           String      @id @default(cuid())
+  roId         String      @unique
+  repairOrder  RepairOrder @relation(fields: [roId], references: [id])
+  surveyorName String?
+  surveyDate   DateTime?
+  approvalDate DateTime?
+}
+
+model Billing {
+  id            String      @id @default(cuid())
+  roId          String      @unique
+  repairOrder   RepairOrder @relation(fields: [roId], references: [id])
+  doDate        DateTime?
+  billNo        String?
+  billAmount    Float       @default(0)
+  actualLabour  Float       @default(0)
+  doAmount      Float       @default(0)
+  receivedRef   String?
+  customerAmount Float      @default(0)
+  difference    Float       @default(0)
+  remarks       String?
+
+  @@index([difference])
+}
+
+model PartsOrder {
+  id           String      @id @default(cuid())
+  roId         String
+  repairOrder  RepairOrder @relation(fields: [roId], references: [id])
+  mrsNo        String?
+  mrsDate      DateTime?
+  orderNo      String?
+  orderDate    DateTime?
+  etaDate      DateTime?
+  receivedDate DateTime?
+  storeRemark  String?
+  backorderFlag Boolean    @default(false)
+
+  @@index([roId])
+}
+
+model WorkNote {
+  id          String      @id @default(cuid())
+  roId        String
+  repairOrder RepairOrder @relation(fields: [roId], references: [id])
+  noteText    String
+  noteDate    DateTime    @default(now())
+  createdById String
+  createdBy   User        @relation(fields: [createdById], references: [id])
+
+  @@index([roId])
+  @@index([noteDate])
+}
+
+model ImportRun {
+  id           String   @id @default(cuid())
+  fileName     String
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  startTime    DateTime @default(now())
+  rowsImported Int      @default(0)
+  errors       String? // SQLite doesn't have Json type in all prisma versions, so use string if needed, or Prisma handles it
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  tableName    String
+  recordId     String
+  changedById  String
+  changedBy    User     @relation(fields: [changedById], references: [id])
+  beforeJson   String?
+  afterJson    String?
+  timestamp    DateTime @default(now())
+}
+
+model DropdownOption {
+  id        String   @id @default(cuid())
+  groupKey  String   // e.g. "insurance_company", "ro_status"
+  label     String   // display text in dropdown
+  value     String?  // stored value (if empty, use label)
+  sortOrder Int      @default(0)
+
+  @@index([groupKey])
+}
