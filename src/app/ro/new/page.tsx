@@ -120,23 +120,23 @@ export default function NewROPage() {
 
     return (
         <DashboardLayout>
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
                 <div>
                     <Link
                         href="/ro"
-                        className="inline-flex items-center gap-1 text-sm font-bold text-black hover:text-blue-600 mb-2 transition-colors"
+                        className="inline-flex items-center gap-1 text-sm font-bold text-black hover:text-blue-600 mb-2 py-2 -ml-1 rounded-lg touch-manipulation"
                     >
                         <ArrowLeft className="w-4 h-4" /> Back to RO Register
                     </Link>
-                    <h1 className="text-2xl font-bold text-black tracking-tight flex items-center gap-2">
-                        <ClipboardList className="w-7 h-7 text-blue-600" />
+                    <h1 className="text-xl sm:text-2xl font-bold text-black tracking-tight flex items-center gap-2">
+                        <ClipboardList className="w-6 h-6 sm:w-7 sm:h-7 text-blue-600" />
                         New Repair Order
                     </h1>
-                    <p className="text-black mt-1">Create a new RO and link it to a vehicle.</p>
+                    <p className="text-slate-600 mt-1 text-sm sm:text-base">Create a new RO and link it to a vehicle.</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 space-y-6">
+                    <div className="p-4 sm:p-6 space-y-6">
                         {error && (
                             <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm font-medium">
                                 {error}

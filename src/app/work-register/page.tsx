@@ -121,18 +121,18 @@ export default function WorkRegisterPage() {
             <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Work Register</h1>
-                        <p className="text-slate-500 mt-1">Track work orders, job cards and workshop progress.</p>
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Work Register</h1>
+                        <p className="text-slate-500 mt-1 text-sm sm:text-base">Track work orders, job cards and workshop progress.</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-all">
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        <button className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-2 min-h-[44px] sm:min-h-0 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-all touch-manipulation">
                             <Download className="w-4 h-4" />
                             Export
                         </button>
                     </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
+                <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 sm:gap-4 items-center">
                     <div className="relative flex-1 w-full">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -142,12 +142,57 @@ export default function WorkRegisterPage() {
                             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                         />
                     </div>
-                    <button className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
+                    <button className="p-3 sm:p-2.5 min-h-[44px] sm:min-h-0 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 transition-all touch-manipulation">
                         <Filter className="w-5 h-5" />
                     </button>
                 </div>
 
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
+                {/* Mobile: card list */}
+                <div className="md:hidden space-y-3">
+                    {isLoading ? (
+                        Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} className="animate-pulse bg-white rounded-2xl border border-slate-200 p-4">
+                                <div className="h-4 bg-slate-100 rounded w-1/3 mb-3" />
+                                <div className="h-3 bg-slate-100 rounded w-full mb-2" />
+                                <div className="h-3 bg-slate-100 rounded w-2/3" />
+                            </div>
+                        ))
+                    ) : filteredList.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                            <div className="flex flex-col items-center justify-center space-y-2 opacity-40">
+                                <Wrench className="w-12 h-12" />
+                                <p className="font-medium">No work entries in register</p>
+                                <p className="text-sm text-slate-500">Fill approval details in Approval Register first; then add work dates and panels here.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        filteredList.map((ro) => (
+                            <div key={ro.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                                <div className="flex justify-between items-start gap-2">
+                                    <span className="font-semibold text-slate-900">{ro.roNo}</span>
+                                    <span className={hasWorkFilled(ro) ? "text-emerald-600 text-sm font-medium" : "text-amber-600 text-sm"}>
+                                        {hasWorkFilled(ro) ? "Filled" : "Pending"}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-slate-700 mt-1">
+                                    Start: {ro.workStartDate ? format(new Date(ro.workStartDate), "dd MMM yyyy") : "—"}
+                                </p>
+                                <p className="text-sm text-slate-700">Completion: {ro.tentativeCompletionDate ? format(new Date(ro.tentativeCompletionDate), "dd MMM yyyy") : "—"}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">Panels replace: {ro.panelsNewReplace ?? "—"} · Dent: {ro.panelsDent ?? "—"}</p>
+                                <button
+                                    onClick={() => openEdit(ro)}
+                                    className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 px-3 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors touch-manipulation min-h-[44px]"
+                                >
+                                    {hasWorkFilled(ro) ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                                    {hasWorkFilled(ro) ? "Edit" : "Add"}
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop: table */}
+                <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
@@ -212,16 +257,16 @@ export default function WorkRegisterPage() {
             </div>
 
             {editingRo && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={closeEdit}>
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40" onClick={closeEdit}>
                     <div
-                        className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6"
+                        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl border border-slate-200 w-full max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 safe-bottom"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-slate-900">
+                            <h2 className="text-base sm:text-lg font-bold text-slate-900 pr-2">
                                 {hasWorkFilled(editingRo) ? "Edit" : "Add"} work — {editingRo.roNo}
                             </h2>
-                            <button onClick={closeEdit} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg">
+                            <button type="button" onClick={closeEdit} aria-label="Close" className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg touch-manipulation">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -268,14 +313,14 @@ export default function WorkRegisterPage() {
                                 <button
                                     type="button"
                                     onClick={closeEdit}
-                                    className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50"
+                                    className="flex-1 px-4 py-3 min-h-[44px] border border-slate-200 text-slate-700 rounded-xl text-sm font-semibold hover:bg-slate-50 touch-manipulation"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                                    className="flex-1 px-4 py-3 min-h-[44px] bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 touch-manipulation"
                                 >
                                     {saving ? "Saving..." : "Save"}
                                 </button>

@@ -58,8 +58,8 @@ function LoginForm() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/20 blur-[120px] rounded-full" />
             </div>
 
-            <div className="w-full max-w-md p-8 relative z-10">
-                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+            <div className="w-full max-w-md px-4 py-6 sm:p-8 relative z-10">
+                <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 sm:p-8 shadow-2xl">
                     <div className="flex flex-col items-center mb-8">
                         <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-blue-600/20">
                             <Car className="text-white w-10 h-10" />
@@ -100,7 +100,7 @@ function LoginForm() {
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-sm font-medium text-gray-300 ml-1">Password</label>
-                                <a href="#" className="text-xs text-blue-500 hover:text-blue-400">Forgot?</a>
+                                <span className="text-xs text-gray-500" title="Contact your administrator to reset your password">Forgot?</span>
                             </div>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -120,7 +120,7 @@ function LoginForm() {
                         <button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed items-center gap-2"
+                            className="w-full flex justify-center py-3.5 px-4 min-h-[48px] border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed items-center gap-2 touch-manipulation"
                         >
                             {isLoading ? (
                                 <>

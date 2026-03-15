@@ -45,22 +45,22 @@ export default function RORegisterPage() {
             <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-black tracking-tight">RO Register</h1>
-                        <p className="text-black mt-1">Manage and track all repair orders in real-time.</p>
+                        <h1 className="text-xl sm:text-2xl font-bold text-black tracking-tight">RO Register</h1>
+                        <p className="text-slate-600 mt-1 text-sm sm:text-base">Manage and track all repair orders in real-time.</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <button className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-black rounded-xl text-sm font-semibold transition-all">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                        <button className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-2 min-h-[44px] sm:min-h-0 bg-slate-100 hover:bg-slate-200 text-black rounded-xl text-sm font-semibold transition-all touch-manipulation">
                             <Download className="w-4 h-4" />
                             Export
                         </button>
-                        <Link href="/ro/new" className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-600/20 transition-all">
+                        <Link href="/ro/new" className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-2 min-h-[44px] sm:min-h-0 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-600/20 transition-all touch-manipulation">
                             <Plus className="w-4 h-4" />
                             New RO
                         </Link>
                     </div>
                 </div>
 
-                <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm w-fit">
+                <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-fit">
                     <div className="relative w-full max-w-md">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -72,8 +72,45 @@ export default function RORegisterPage() {
                     </div>
                 </div>
 
-                {/* Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                {/* Mobile: card list */}
+                <div className="md:hidden space-y-3">
+                    {isLoading ? (
+                        Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="animate-pulse bg-white rounded-2xl border border-slate-200 p-4">
+                                <div className="h-4 bg-slate-100 rounded w-1/3 mb-3" />
+                                <div className="h-3 bg-slate-100 rounded w-full mb-2" />
+                                <div className="h-3 bg-slate-100 rounded w-2/3" />
+                            </div>
+                        ))
+                    ) : ros.length === 0 ? (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                            <div className="flex flex-col items-center justify-center space-y-2 opacity-40">
+                                <ClipboardList className="w-12 h-12 text-black" />
+                                <p className="font-medium text-black">No repair orders found</p>
+                            </div>
+                        </div>
+                    ) : (
+                        ros.map((ro) => (
+                            <Link
+                                key={ro.id}
+                                href={`/ro/${ro.id}`}
+                                className="block bg-white rounded-2xl border border-slate-200 shadow-sm p-4 active:bg-slate-50 transition-colors touch-manipulation"
+                            >
+                                <div className="flex justify-between items-start gap-2">
+                                    <span className="font-semibold text-black">{ro.roNo}</span>
+                                    <span className="text-xs text-slate-500 shrink-0">{format(new Date(ro.vehicleInDate), "dd MMM yyyy")}</span>
+                                </div>
+                                <p className="text-sm font-medium text-slate-800 uppercase mt-1">{ro.vehicle?.registrationNo ?? "—"}</p>
+                                <p className="text-sm text-slate-600 mt-0.5">{ro.vehicle?.model ?? "—"}</p>
+                                <p className="text-sm text-slate-700 mt-1 truncate">{ro.vehicle?.customer?.name ?? "—"}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{ro.insuranceClaim?.insuranceCompany || "OWNER CASH"}</p>
+                            </Link>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop: table */}
+                <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
