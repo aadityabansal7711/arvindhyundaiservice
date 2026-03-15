@@ -57,7 +57,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     );
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] flex">
+        <div className="min-h-screen bg-[var(--background)] flex">
             {/* Mobile Menu Overlay */}
             {isMobileMenuOpen && (
                 <div
@@ -66,108 +66,108 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 />
             )}
 
-            {/* Sidebar */}
+            {/* Sidebar - dark theme */}
             <aside
                 className={cn(
-                    "bg-white border-r border-slate-200 z-50 transition-all duration-300 flex flex-col fixed lg:static inset-y-0 left-0",
+                    "bg-[var(--sidebar-bg)] z-50 transition-all duration-300 flex flex-col fixed lg:static inset-y-0 left-0 shadow-xl lg:shadow-none",
                     isSidebarCollapsed ? "w-20" : "w-64",
                     isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
                 )}
             >
-                <div className="p-4 flex items-center justify-between border-b border-slate-100 h-16">
+                <div className="p-4 flex items-center justify-between h-16 border-b border-white/10">
                     <div className={cn("flex items-center gap-3 overflow-hidden", isSidebarCollapsed && "lg:justify-center w-full")}>
-                        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-blue-600/20">
-                            <Car className="text-white w-6 h-6" />
+                        <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30 ring-2 ring-white/10">
+                            <Car className="text-white w-5 h-5" />
                         </div>
                         {!isSidebarCollapsed && (
-                            <span className="font-bold text-slate-900 truncate">Arvind Hyundai</span>
+                            <span className="font-bold text-white truncate text-lg tracking-tight">Arvind Hyundai</span>
                         )}
                     </div>
                     <button
-                        className="lg:hidden"
+                        className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
                         onClick={() => setIsMobileMenuOpen(false)}
                     >
-                        <X className="w-6 h-6 text-slate-500" />
+                        <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
                     {filteredSidebarItems.map((item) => (
                         <Link
                             key={item.name}
                             href={item.href}
                             className={cn(
-                                "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group",
+                                "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group",
                                 pathname.startsWith(item.href)
-                                    ? "bg-blue-50 text-blue-600 font-semibold"
-                                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                                    ? "bg-white/10 text-white font-medium shadow-inner"
+                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
                             )}
                         >
                             <item.icon className={cn(
-                                "w-5 h-5",
-                                pathname.startsWith(item.href) ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"
+                                "w-5 h-5 shrink-0",
+                                pathname.startsWith(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
                             )} />
                             {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
                             {pathname.startsWith(item.href) && !isSidebarCollapsed && (
-                                <div className="ml-auto w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
                             )}
                         </Link>
                     ))}
                 </nav>
 
-                <div className="p-4 border-t border-slate-100 flex flex-col gap-2">
+                <div className="p-4 border-t border-white/10 flex flex-col gap-2">
                     {!isSidebarCollapsed && session?.user && (
-                        <div className="flex items-center gap-3 px-2 py-2 mb-2">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
-                                <UserIcon className="w-5 h-5 text-slate-400" />
+                        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 mb-1">
+                            <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
+                                <UserIcon className="w-5 h-5 text-slate-300" />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-slate-900 truncate">{session.user.name}</p>
-                                <p className="text-xs text-slate-500 truncate">{(session.user as any).role}</p>
+                                <p className="text-sm font-semibold text-white truncate">{session.user.name}</p>
+                                <p className="text-xs text-slate-400 truncate">{(session.user as any).role}</p>
                             </div>
                         </div>
                     )}
                     <button
                         onClick={() => signOut({ callbackUrl: "/login" })}
                         className={cn(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-all",
+                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200",
                             isSidebarCollapsed && "justify-center"
                         )}
                     >
-                        <LogOut className="w-5 h-5" />
+                        <LogOut className="w-5 h-5 shrink-0" />
                         {!isSidebarCollapsed && <span className="font-medium">Logout</span>}
                     </button>
                     <button
                         onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                        className="hidden lg:flex items-center justify-center p-2 rounded-lg hover:bg-slate-100 text-slate-400 absolute -right-4 top-20 bg-white border border-slate-200 shadow-sm z-50"
+                        className="hidden lg:flex items-center justify-center p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white absolute -right-3 top-20 bg-[var(--sidebar-bg)] border border-white/10 shadow-lg z-50 transition-colors"
                     >
-                        {isSidebarCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+                        {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
                     </button>
                 </div>
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-dashboard-pattern">
                 {/* Top Header */}
-                <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 lg:px-8 flex-shrink-0">
+                <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/80 h-16 flex items-center justify-between px-4 lg:px-8 flex-shrink-0 shadow-sm">
                     <div className="flex items-center gap-4">
                         <button
-                            className="lg:hidden p-2 text-slate-500"
+                            className="lg:hidden p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
                             onClick={() => setIsMobileMenuOpen(true)}
                         >
                             <Menu className="w-6 h-6" />
                         </button>
                         <div className="relative hidden md:block w-64 lg:w-96">
-                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                                 placeholder="Search RO, Reg No, Customer..."
-                                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400/50 focus:bg-white transition-all shadow-sm"
                             />
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2 lg:gap-4">
-                        {/* Header actions (Notifications/Profile) removed as per user request */}
+                        {/* Header actions */}
                     </div>
                 </header>
 

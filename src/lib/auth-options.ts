@@ -30,7 +30,7 @@ export const authOptions: NextAuthOptions = {
                 const password = credentials.password;
 
                 // 1. Try Supabase Auth first (canonical source once user is synced)
-                let authData: { user?: { id: string } } | null = null;
+                let authData: { user?: { id: string } | null } | null = null;
                 let authError: Error | null = null;
                 try {
                     const res = await supabase.auth.signInWithPassword({ email, password });
