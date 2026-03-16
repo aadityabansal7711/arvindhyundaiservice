@@ -25,6 +25,7 @@ export default function NewROPage() {
     const [serviceAdvisorName, setServiceAdvisorName] = useState("");
     const [insuranceCompany, setInsuranceCompany] = useState("");
     const [insuranceOptions, setInsuranceOptions] = useState<DropdownOption[]>([]);
+    const [modelOptions, setModelOptions] = useState<DropdownOption[]>([]);
     const [serviceAdvisorOptions, setServiceAdvisorOptions] = useState<DropdownOption[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,6 +35,7 @@ export default function NewROPage() {
 
     useEffect(() => {
         apiGet<DropdownOption[]>("/api/data/options?group=insurance_company").then(setInsuranceOptions).catch(() => setInsuranceOptions([]));
+        apiGet<DropdownOption[]>("/api/data/options?group=model").then(setModelOptions).catch(() => setModelOptions([]));
         apiGet<DropdownOption[]>("/api/data/options?group=service_advisor").then(setServiceAdvisorOptions).catch(() => setServiceAdvisorOptions([]));
         apiGet<Branch[]>("/api/data/branches").then(setBranches).catch(() => setBranches([]));
     }, []);
@@ -217,14 +219,30 @@ export default function NewROPage() {
                                 <label className="block text-xs font-bold text-black uppercase tracking-widest mb-2">
                                     Model <span className="text-rose-500">*</span>
                                 </label>
-                                <input
-                                    type="text"
-                                    value={newModel}
-                                    onChange={(e) => setNewModel(e.target.value)}
-                                    placeholder=""
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
-                                    required
-                                />
+                                {modelOptions.length > 0 ? (
+                                    <select
+                                        value={newModel}
+                                        onChange={(e) => setNewModel(e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
+                                        required
+                                    >
+                                        <option value="">Select model</option>
+                                        {modelOptions.map((opt) => (
+                                            <option key={opt.id} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        type="text"
+                                        value={newModel}
+                                        onChange={(e) => setNewModel(e.target.value)}
+                                        placeholder=""
+                                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
+                                        required
+                                    />
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-black uppercase tracking-widest mb-2">

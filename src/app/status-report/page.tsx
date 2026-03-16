@@ -47,7 +47,7 @@ export default function StatusReportPage() {
         setIsLoading(true);
         try {
             const data = await apiGet<ROListItem[]>(
-                `/api/ro?search=${encodeURIComponent(searchTerm)}&limit=200`
+                `/api/ro?search=${encodeURIComponent(searchTerm)}&limit=80`
             );
             setRos(data);
             if (selectedId && !data.some((r) => r.id === selectedId)) {

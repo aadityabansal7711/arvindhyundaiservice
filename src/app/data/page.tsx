@@ -18,11 +18,12 @@ import { cn } from "@/lib/utils";
 
 type Role = { id: string; name: string };
 type Branch = { id: string; name: string };
-type DropdownOption = { id: string; groupKey: string; label: string; value: string | null; sortOrder: number };
+type DropdownOption = { id: string; groupKey: string; label: string };
 
 const OPTION_GROUPS: { key: string; label: string }[] = [
-    { key: "insurance_company", label: "Insurance Company" },
+    { key: "insurance_company", label: "Insurance Company Name" },
     { key: "service_advisor", label: "Service Advisor" },
+    { key: "model", label: "Model" },
 ];
 
 export default function DataPage() {
@@ -38,7 +39,7 @@ export default function DataPage() {
 
     const [roleForm, setRoleForm] = useState({ name: "" });
     const [branchForm, setBranchForm] = useState({ name: "" });
-    const [optionForm, setOptionForm] = useState({ groupKey: "insurance_company", label: "", value: "", sortOrder: 0 });
+    const [optionForm, setOptionForm] = useState({ groupKey: "insurance_company", label: "" });
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
     const [editingOption, setEditingOption] = useState<DropdownOption | null>(null);
@@ -157,24 +158,30 @@ export default function DataPage() {
         setError("");
         setSaving(true);
         try {
-            const payload = {
-                groupKey: optionForm.groupKey,
-                label: optionForm.label.trim(),
-                value: optionForm.value.trim() || null,
-                sortOrder: optionForm.sortOrder,
-            };
+            const baseGroupKey = optionForm.groupKey;
+            const rawLabel = optionForm.label;
+
             if (editingOption) {
+                const singleLabel = rawLabel.trim();
                 await apiPatch(`/api/data/options/${editingOption.id}`, {
-                    label: payload.label,
-                    value: payload.value,
-                    sortOrder: payload.sortOrder,
+                    label: singleLabel,
                 });
             } else {
-                await apiPost("/api/data/options", payload);
+                const labels = rawLabel
+                    .split(/[\n,]+/)
+                    .map((l) => l.trim())
+                    .filter(Boolean);
+
+                for (const label of labels) {
+                    await apiPost("/api/data/options", {
+                        groupKey: baseGroupKey,
+                        label,
+                    });
+                }
             }
             setShowOptionModal(false);
             setEditingOption(null);
-            setOptionForm({ groupKey: "insurance_company", label: "", value: "", sortOrder: 0 });
+            setOptionForm({ groupKey: "insurance_company", label: "" });
             fetchOptions();
         } catch (err: any) {
             setError(err?.message || "Failed to save option");
@@ -209,14 +216,14 @@ export default function DataPage() {
         setOptionForm({
             groupKey: o.groupKey,
             label: o.label,
-            value: o.value ?? "",
-            sortOrder: o.sortOrder,
         });
         setShowOptionModal(true);
     };
 
     const optionsByGroup = (groupKey: string) =>
-        options.filter((o) => o.groupKey === groupKey);
+        options
+            .filter((o) => o.groupKey === groupKey)
+            .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 
     return (
         <DashboardLayout>
@@ -348,8 +355,6 @@ export default function DataPage() {
                                                                 setOptionForm({
                                                                     groupKey: group.key,
                                                                     label: "",
-                                                                    value: "",
-                                                                    sortOrder: items.length,
                                                                 });
                                                                 setShowOptionModal(true);
                                                             }}
@@ -362,8 +367,6 @@ export default function DataPage() {
                                                         <thead>
                                                             <tr className="bg-slate-100/50 border-b border-slate-200">
                                                                 <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Label</th>
-                                                                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Value</th>
-                                                                <th className="px-4 py-2 text-xs font-bold text-slate-500 uppercase">Order</th>
                                                                 <th className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase">Actions</th>
                                                             </tr>
                                                         </thead>
@@ -371,8 +374,6 @@ export default function DataPage() {
                                                             {items.map((o) => (
                                                                 <tr key={o.id} className="hover:bg-slate-50/50">
                                                                     <td className="px-4 py-2 font-medium text-slate-900">{o.label}</td>
-                                                                    <td className="px-4 py-2 text-slate-600">{o.value ?? o.label}</td>
-                                                                    <td className="px-4 py-2 text-slate-500">{o.sortOrder}</td>
                                                                     <td className="px-4 py-2 text-right">
                                                                         <button onClick={() => openOptionEdit(o)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                                                         <button onClick={() => handleDeleteOption(o)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
@@ -469,45 +470,25 @@ export default function DataPage() {
                             {!editingOption && (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Group</label>
-                                    <select
-                                        value={optionForm.groupKey}
-                                        onChange={(e) => setOptionForm((f) => ({ ...f, groupKey: e.target.value }))}
-                                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm"
-                                    >
-                                        {OPTION_GROUPS.map((g) => (
-                                            <option key={g.key} value={g.key}>{g.label}</option>
-                                        ))}
-                                    </select>
+                                    <div className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-700">
+                                        {OPTION_GROUPS.find((g) => g.key === optionForm.groupKey)?.label ?? optionForm.groupKey}
+                                    </div>
                                 </div>
                             )}
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Label (shown in dropdown)</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                                    Label (shown in dropdown)
+                                    {!editingOption && " — you can paste multiple, separated by commas or new lines"}
+                                </label>
                                 <input
                                     value={optionForm.label}
                                     onChange={(e) => setOptionForm((f) => ({ ...f, label: e.target.value }))}
                                     className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm"
-                                    placeholder="e.g. HDFC Ergo"
+                                    placeholder=""
                                     required
                                 />
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Value (optional; if empty, label is used)</label>
-                                <input
-                                    value={optionForm.value}
-                                    onChange={(e) => setOptionForm((f) => ({ ...f, value: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm"
-                                    placeholder="Stored value"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sort order</label>
-                                <input
-                                    type="number"
-                                    value={optionForm.sortOrder}
-                                    onChange={(e) => setOptionForm((f) => ({ ...f, sortOrder: parseInt(e.target.value, 10) || 0 }))}
-                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm"
-                                />
-                            </div>
+                            
                             <div className="flex justify-end gap-2">
                                 <button type="button" onClick={() => setShowOptionModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold">Cancel</button>
                                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50 flex items-center gap-2">

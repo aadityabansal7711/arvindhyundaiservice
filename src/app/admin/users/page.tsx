@@ -31,7 +31,6 @@ export default function UserManagementPage() {
     const [addForm, setAddForm] = useState({
         name: "",
         email: "",
-        phone: "",
         roleId: "",
         branchId: "",
     });
@@ -107,7 +106,6 @@ export default function UserManagementPage() {
         setAddForm({
             name: "",
             email: "",
-            phone: "",
             roleId: metadata?.roles?.[0]?.id ?? "",
             branchId: "",
         });
@@ -123,7 +121,6 @@ export default function UserManagementPage() {
             await apiPost("/api/admin/users", {
                 name: addForm.name.trim(),
                 email: addForm.email.trim(),
-                phone: addForm.phone.trim() || undefined,
                 roleId: addForm.roleId || undefined,
                 branchId: addForm.branchId.trim() || undefined,
             });
@@ -274,14 +271,6 @@ export default function UserManagementPage() {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Phone (optional)</label>
-                                <input
-                                    type="text"
-                                    autoComplete="off"
-                                    value={addForm.phone}
-                                    onChange={(e) => setAddForm((f) => ({ ...f, phone: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                />
                             </div>
                             {metadata && (
                                 <>

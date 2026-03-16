@@ -33,7 +33,7 @@ export default function ClaimRegisterPage() {
         setIsLoading(true);
         try {
             const data = await apiGet<RO[]>(
-                `/api/ro?search=${encodeURIComponent(searchTerm)}&limit=200`
+                `/api/ro?search=${encodeURIComponent(searchTerm)}&limit=80`
             );
             setRos(data);
         } catch (err) {
