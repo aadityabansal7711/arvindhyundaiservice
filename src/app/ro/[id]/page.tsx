@@ -116,66 +116,103 @@ export default function RODetailPage() {
                     <div className="p-8 flex-1">
                         {activeTab === "claim" && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                                <div className="space-y-6">
-                                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                        <Shield className="w-5 h-5 text-blue-600" /> Insurance Claim
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-y-6">
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">Policy Number</p>
-                                            <p className="text-sm font-semibold mt-1">{ro.insuranceClaim?.policyNo || "N/A"}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">Claim Number</p>
-                                            <p className="text-sm font-semibold mt-1">{ro.insuranceClaim?.claimNo || "N/A"}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">Intimation Date</p>
-                                            <p className="text-sm font-semibold mt-1">{ro.insuranceClaim?.claimIntimationDate ? format(new Date(ro.insuranceClaim.claimIntimationDate), "dd MMM yyyy") : "N/A"}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">HAP Status</p>
-                                            <span className={cn("inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold", ro.insuranceClaim?.hapFlag ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")}>
-                                                {ro.insuranceClaim?.hapFlag ? "HAP" : "NON-HAP"}
-                                            </span>
+                                {ro.insuranceClaim ? (
+                                    <div className="space-y-6">
+                                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                            <Shield className="w-5 h-5 text-blue-600" /> Insurance Claim
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-y-6">
+                                            {ro.insuranceClaim.policyNo && (
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-500 uppercase">Policy Number</p>
+                                                    <p className="text-sm font-semibold mt-1">{ro.insuranceClaim.policyNo}</p>
+                                                </div>
+                                            )}
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-500 uppercase">Claim Number</p>
+                                                <p className="text-sm font-semibold mt-1">{ro.insuranceClaim.claimNo ?? "—"}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-500 uppercase">Intimation Date</p>
+                                                <p className="text-sm font-semibold mt-1">
+                                                    {ro.insuranceClaim.claimIntimationDate
+                                                        ? format(new Date(ro.insuranceClaim.claimIntimationDate), "dd MMM yyyy")
+                                                        : "—"}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-500 uppercase">HAP Status</p>
+                                                <span
+                                                    className={cn(
+                                                        "inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold",
+                                                        ro.insuranceClaim.hapFlag ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+                                                    )}
+                                                >
+                                                    {ro.insuranceClaim.hapFlag ? "HAP" : "NON-HAP"}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="space-y-6 border-t md:border-t-0 md:border-l border-slate-100 md:pl-12 pt-6 md:pt-0">
-                                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                        <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Survey Details
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-y-6">
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">Surveyor Name</p>
-                                            <p className="text-sm font-semibold mt-1">{ro.survey?.surveyorName || "Pending"}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase">Survey Date</p>
-                                            <p className="text-sm font-semibold mt-1">{ro.survey?.surveyDate ? format(new Date(ro.survey.surveyDate), "dd MMM yyyy") : "Pending"}</p>
-                                        </div>
-                                        <div className="col-span-2">
-                                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                                <p className="text-xs font-bold text-slate-500 uppercase mb-2">Approval Status</p>
-                                                <div className="flex items-center gap-3">
-                                                    {ro.survey?.approvalDate ? (
-                                                        <>
-                                                            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600"><CheckCircle2 className="w-5 h-5" /></div>
-                                                            <div>
-                                                                <p className="text-sm font-bold text-emerald-700 italic">Approved on {format(new Date(ro.survey.approvalDate), "dd MMM yyyy")}</p>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600"><Clock className="w-5 h-5" /></div>
-                                                            <p className="text-sm font-bold text-amber-600 italic">Awaiting Approval</p>
-                                                        </>
-                                                    )}
+                                ) : (
+                                    <div className="space-y-2">
+                                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                            <Shield className="w-5 h-5 text-blue-600" /> Insurance Claim
+                                        </h3>
+                                        <p className="text-sm text-slate-500">No claim details available for this RO yet.</p>
+                                    </div>
+                                )}
+                                {ro.survey ? (
+                                    <div className="space-y-6 border-t md:border-t-0 md:border-l border-slate-100 md:pl-12 pt-6 md:pt-0">
+                                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                            <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Survey Details
+                                        </h3>
+                                        <div className="grid grid-cols-2 gap-y-6">
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-500 uppercase">Surveyor Name</p>
+                                                <p className="text-sm font-semibold mt-1">{ro.survey.surveyorName ?? "—"}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-500 uppercase">Survey Date</p>
+                                                <p className="text-sm font-semibold mt-1">
+                                                    {ro.survey.surveyDate ? format(new Date(ro.survey.surveyDate), "dd MMM yyyy") : "—"}
+                                                </p>
+                                            </div>
+                                            <div className="col-span-2">
+                                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                                    <p className="text-xs font-bold text-slate-500 uppercase mb-2">Approval Status</p>
+                                                    <div className="flex items-center gap-3">
+                                                        {ro.survey.approvalDate ? (
+                                                            <>
+                                                                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                                                    <CheckCircle2 className="w-5 h-5" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-sm font-bold text-emerald-700 italic">
+                                                                        Approved on {format(new Date(ro.survey.approvalDate), "dd MMM yyyy")}
+                                                                    </p>
+                                                                </div>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                                                                    <Clock className="w-5 h-5" />
+                                                                </div>
+                                                                <p className="text-sm font-bold text-amber-600 italic">Awaiting Approval</p>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="space-y-2 border-t md:border-t-0 md:border-l border-slate-100 md:pl-12 pt-6 md:pt-0">
+                                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                            <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Survey Details
+                                        </h3>
+                                        <p className="text-sm text-slate-500">No survey details captured for this RO yet.</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                         {/* Remaining tabs would have similar premium layouts */}

@@ -6,6 +6,8 @@ import { Filter, Download, Search, BarChart3, Calendar, Shield, CheckCircle2, Wr
 import { apiGet } from "@/lib/api";
 import { format } from "date-fns";
 
+type Branch = { id: string; name: string };
+
 type ROListItem = {
     id: string;
     roNo: string;
@@ -20,6 +22,7 @@ type ROListItem = {
         hapFlag: boolean;
         insuranceCompany: string;
     } | null;
+    branch?: { id: string; name: string } | null;
     survey: {
         surveyorName: string | null;
         surveyDate: string | null;
@@ -42,13 +45,18 @@ export default function StatusReportPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [detailLoading, setDetailLoading] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [branches, setBranches] = useState<Branch[]>([]);
+    const [branchId, setBranchId] = useState("");
 
     const fetchROs = async () => {
         setIsLoading(true);
         try {
-            const data = await apiGet<ROListItem[]>(
-                `/api/ro?search=${encodeURIComponent(searchTerm)}&limit=80`
-            );
+            const params = new URLSearchParams({
+                search: searchTerm,
+                limit: "80",
+            });
+            if (branchId) params.set("branchId", branchId);
+            const data = await apiGet<ROListItem[]>(`/api/ro?${params.toString()}`);
             setRos(data);
             if (selectedId && !data.some((r) => r.id === selectedId)) {
                 setSelectedId(null);
@@ -67,7 +75,13 @@ export default function StatusReportPage() {
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
         };
-    }, [searchTerm]);
+    }, [searchTerm, branchId]);
+
+    useEffect(() => {
+        apiGet<Branch[]>("/api/data/branches")
+            .then(setBranches)
+            .catch(() => setBranches([]));
+    }, []);
 
     useEffect(() => {
         if (!selectedId) {
@@ -110,6 +124,20 @@ export default function StatusReportPage() {
                             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                         />
                     </div>
+                    {branches.length > 0 && (
+                        <select
+                            value={branchId}
+                            onChange={(e) => setBranchId(e.target.value)}
+                            className="w-full md:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                        >
+                            <option value="">All branches</option>
+                            {branches.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                    {b.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                     <button className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
                         <Filter className="w-5 h-5" />
                     </button>

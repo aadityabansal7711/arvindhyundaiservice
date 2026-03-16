@@ -12,16 +12,25 @@ import {
 import { apiGet } from "@/lib/api";
 import { format } from "date-fns";
 
+type Branch = { id: string; name: string };
+
 export default function RORegisterPage() {
     const [ros, setRos] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
+    const [branches, setBranches] = useState<Branch[]>([]);
+    const [branchId, setBranchId] = useState("");
     const initialMount = useRef(true);
 
     const fetchROs = async () => {
         setIsLoading(true);
         try {
-            const data = await apiGet<any[]>(`/api/ro?search=${encodeURIComponent(searchTerm)}&limit=80`);
+            const params = new URLSearchParams({
+                search: searchTerm,
+                limit: "80",
+            });
+            if (branchId) params.set("branchId", branchId);
+            const data = await apiGet<any[]>(`/api/ro?${params.toString()}`);
             setRos(data);
         } catch (err) {
             if ((err as Error)?.message !== "Unauthorized") console.error(err);
@@ -38,7 +47,13 @@ export default function RORegisterPage() {
         }
         const delayDebounce = setTimeout(() => fetchROs(), 300);
         return () => clearTimeout(delayDebounce);
-    }, [searchTerm]);
+    }, [searchTerm, branchId]);
+
+    useEffect(() => {
+        apiGet<Branch[]>("/api/data/branches")
+            .then(setBranches)
+            .catch(() => setBranches([]));
+    }, []);
 
     return (
         <DashboardLayout>
@@ -60,7 +75,7 @@ export default function RORegisterPage() {
                     </div>
                 </div>
 
-                <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-fit">
+                <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-fit flex flex-col sm:flex-row gap-2 sm:gap-3">
                     <div className="relative w-full max-w-md">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -70,6 +85,20 @@ export default function RORegisterPage() {
                             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
                         />
                     </div>
+                    {branches.length > 0 && (
+                        <select
+                            value={branchId}
+                            onChange={(e) => setBranchId(e.target.value)}
+                            className="w-full sm:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                        >
+                            <option value="">All branches</option>
+                            {branches.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                    {b.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
                 </div>
 
                 {/* Mobile: card list */}
@@ -117,6 +146,7 @@ export default function RORegisterPage() {
                                 <tr className="bg-slate-50 border-b border-slate-200">
                                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">R/O NO</th>
                                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">R/O DATE</th>
+                                    <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">BRANCH</th>
                                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">REGISTRATION NO</th>
                                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">MODEL</th>
                                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">CUSTOMER NAME</th>
@@ -146,6 +176,7 @@ export default function RORegisterPage() {
                                         <tr key={ro.id} className="hover:bg-slate-50/50 transition-colors">
                                             <td className="px-4 py-3 text-sm font-semibold text-black whitespace-nowrap">{ro.roNo}</td>
                                             <td className="px-4 py-3 text-sm text-black whitespace-nowrap">{format(new Date(ro.vehicleInDate), "dd MMM yyyy")}</td>
+                                            <td className="px-4 py-3 text-sm text-black whitespace-nowrap">{ro.branch?.name ?? "—"}</td>
                                             <td className="px-4 py-3 text-sm font-medium text-black uppercase whitespace-nowrap">{ro.vehicle?.registrationNo ?? "—"}</td>
                                             <td className="px-4 py-3 text-sm text-black whitespace-nowrap">{ro.vehicle?.model ?? "—"}</td>
                                             <td className="px-4 py-3 text-sm text-black whitespace-nowrap">{ro.vehicle?.customer?.name ?? "—"}</td>
