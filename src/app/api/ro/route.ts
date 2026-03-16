@@ -78,14 +78,24 @@ export async function POST(req: NextRequest) {
         const company = insuranceCompany ? String(insuranceCompany).trim() : "";
         const surveyor = surveyorName ? String(surveyorName).trim() : null;
 
+        let normalizedHapFlag: boolean | null = null;
+        if (hapFlag === true || hapFlag === "HAP") {
+            normalizedHapFlag = true;
+        } else if (hapFlag === false || hapFlag === "NHAP") {
+            normalizedHapFlag = false;
+        }
+
         const [insuranceClaimData, surveyData, billingData] = await Promise.all([
             prisma.insuranceClaim.create({
                 data: {
-                    roId: ro.id,
+                    repairOrder: {
+                        connect: { id: ro.id },
+                    },
                     insuranceCompany: company,
                     claimNo: claimNo ? String(claimNo).trim() : null,
                     claimIntimationDate: claimIntimationDate ? new Date(claimIntimationDate) : null,
-                    hapFlag: Boolean(hapFlag),
+                    // If normalizedHapFlag is null, let the database default apply instead of sending null
+                    ...(normalizedHapFlag !== null ? { hapFlag: normalizedHapFlag } : {}),
                 },
             }),
             prisma.survey.create({
@@ -148,6 +158,13 @@ export async function GET(req: NextRequest) {
                 tentativeCompletionDate: true,
                 panelsNewReplace: true,
                 panelsDent: true,
+                serviceAdvisorName: true,
+                branch: {
+                    select: {
+                        id: true,
+                        name: true,
+                    },
+                },
                 vehicle: {
                     select: {
                         registrationNo: true,

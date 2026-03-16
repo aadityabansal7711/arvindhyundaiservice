@@ -17,7 +17,7 @@ type RO = {
     insuranceClaim: {
         claimNo: string | null;
         claimIntimationDate: string | null;
-        hapFlag: boolean;
+        hapFlag: boolean | null;
         insuranceCompany: string;
     } | null;
     branch?: { id: string; name: string } | null;
@@ -30,7 +30,12 @@ export default function ClaimRegisterPage() {
     const [branches, setBranches] = useState<Branch[]>([]);
     const [branchId, setBranchId] = useState("");
     const [editingRo, setEditingRo] = useState<RO | null>(null);
-    const [form, setForm] = useState({ claimNo: "", claimDate: "", hap: "NHAP" as "HAP" | "NHAP" });
+    const [form, setForm] = useState({
+        claimNo: "",
+        claimDate: "",
+        hap: "" as "" | "HAP" | "NHAP",
+        insuranceCompany: "",
+    });
     const [saving, setSaving] = useState(false);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -67,19 +72,24 @@ export default function ClaimRegisterPage() {
 
     const openEdit = (ro: RO) => {
         const claim = ro.insuranceClaim;
+        const today = format(new Date(), "yyyy-MM-dd");
         setEditingRo(ro);
         setForm({
             claimNo: claim?.claimNo ?? "",
+            // If there is an existing claimIntimationDate, use it.
+            // Otherwise, default to today's date so a new claim
+            // doesn't stay pending just because the user didn't pick a date.
             claimDate: claim?.claimIntimationDate
                 ? format(new Date(claim.claimIntimationDate), "yyyy-MM-dd")
-                : "",
-            hap: claim?.hapFlag ? "HAP" : "NHAP",
+                : today,
+            hap: claim?.hapFlag === true ? "HAP" : claim?.hapFlag === false ? "NHAP" : "",
+            insuranceCompany: claim?.insuranceCompany ?? "",
         });
     };
 
     const closeEdit = () => {
         setEditingRo(null);
-        setForm({ claimNo: "", claimDate: "", hap: "NHAP" });
+        setForm({ claimNo: "", claimDate: "", hap: "", insuranceCompany: "" });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -91,7 +101,8 @@ export default function ClaimRegisterPage() {
                 insuranceClaim: {
                     claimNo: form.claimNo.trim() || null,
                     claimIntimationDate: form.claimDate || null,
-                    hapFlag: form.hap === "HAP",
+                    hapFlag: form.hap ? form.hap === "HAP" : null,
+                    insuranceCompany: form.insuranceCompany.trim(),
                 },
             });
             closeEdit();
@@ -240,7 +251,13 @@ export default function ClaimRegisterPage() {
                                                     ? format(new Date(ro.insuranceClaim.claimIntimationDate), "dd MMM yyyy")
                                                     : "—"}
                                             </td>
-                                            <td className="px-6 py-3 text-sm">{ro.insuranceClaim?.hapFlag ? "HAP" : "NHAP"}</td>
+                                            <td className="px-6 py-3 text-sm">
+                                                {ro.insuranceClaim?.hapFlag === true
+                                                    ? "HAP"
+                                                    : ro.insuranceClaim?.hapFlag === false
+                                                    ? "NHAP"
+                                                    : "—"}
+                                            </td>
                                             <td className="px-6 py-3 text-sm">
                                                 <span className={hasClaimFilled(ro) ? "text-emerald-600 font-medium" : "text-amber-600"}>
                                                     {hasClaimFilled(ro) ? "Filled" : "Pending"}
@@ -299,12 +316,23 @@ export default function ClaimRegisterPage() {
                                 />
                             </div>
                             <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Insurance Company</label>
+                                <input
+                                    type="text"
+                                    value={form.insuranceCompany}
+                                    onChange={(e) => setForm((f) => ({ ...f, insuranceCompany: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="Insurance company name"
+                                />
+                            </div>
+                            <div>
                                 <label className="block text-sm font-medium text-slate-700 mb-1">HAP / NHAP</label>
                                 <select
                                     value={form.hap}
-                                    onChange={(e) => setForm((f) => ({ ...f, hap: e.target.value as "HAP" | "NHAP" }))}
+                                    onChange={(e) => setForm((f) => ({ ...f, hap: e.target.value as "" | "HAP" | "NHAP" }))}
                                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                                 >
+                                    <option value="">Select...</option>
                                     <option value="HAP">HAP</option>
                                     <option value="NHAP">NHAP</option>
                                 </select>

@@ -19,7 +19,7 @@ type ROListItem = {
     insuranceClaim: {
         claimNo: string | null;
         claimIntimationDate: string | null;
-        hapFlag: boolean;
+        hapFlag: boolean | null;
         insuranceCompany: string;
     } | null;
     branch?: { id: string; name: string } | null;
@@ -250,7 +250,13 @@ export default function StatusReportPage() {
                                             </div>
                                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase">HAP/NHAP</p>
-                                                <p className="text-sm font-bold text-slate-900 mt-0.5">{detail.insuranceClaim?.hapFlag ? "HAP" : "NHAP"}</p>
+                                                <p className="text-sm font-bold text-slate-900 mt-0.5">
+                                                    {detail.insuranceClaim?.hapFlag === true
+                                                        ? "HAP"
+                                                        : detail.insuranceClaim?.hapFlag === false
+                                                        ? "NHAP"
+                                                        : "—"}
+                                                </p>
                                             </div>
                                             <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase">Insurance Co</p>

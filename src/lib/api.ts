@@ -15,7 +15,7 @@ async function handleRes<T>(res: Response): Promise<T> {
 }
 
 export async function apiGet<T = unknown>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include" });
+  const res = await fetch(url, { credentials: "include", cache: "no-store" });
   return handleRes<T>(res);
 }
 

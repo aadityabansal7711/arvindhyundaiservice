@@ -39,7 +39,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await getServerSession(authOptions);
-    if (!session) {
+    if (!session || !(session.user as any).permissions?.includes("users.manage")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -77,7 +77,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     try {
         const ro = await prisma.repairOrder.findUnique({
             where: { id },
-            include: { insuranceClaim: true, survey: true },
+            include: {
+                insuranceClaim: true,
+                survey: true,
+                vehicle: {
+                    include: { customer: true },
+                },
+            },
         });
         if (!ro) {
             return NextResponse.json({ error: "RO Not Found" }, { status: 404 });
@@ -86,6 +92,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const body = await req.json();
 
         const roUpdates: Record<string, unknown> = {};
+
+        // Basic RO fields (used by Edit RO page)
+        if (body.roNo !== undefined) roUpdates.roNo = String(body.roNo).trim();
+        if (body.branchId !== undefined) {
+            if (body.branchId) {
+                roUpdates.branch = { connect: { id: String(body.branchId).trim() } };
+            } else {
+                roUpdates.branch = { disconnect: true };
+            }
+        }
+        if (body.vehicleInDate !== undefined) roUpdates.vehicleInDate = body.vehicleInDate ? new Date(body.vehicleInDate) : null;
+        if (body.currentStatus !== undefined) roUpdates.currentStatus = String(body.currentStatus).trim();
+        if (body.serviceAdvisorName !== undefined) roUpdates.serviceAdvisorName = body.serviceAdvisorName ? String(body.serviceAdvisorName).trim() : "";
+        if (body.photos !== undefined && Array.isArray(body.photos)) roUpdates.photos = body.photos;
         if (body.workStartDate !== undefined) roUpdates.workStartDate = body.workStartDate ? new Date(body.workStartDate) : null;
         if (body.tentativeCompletionDate !== undefined) roUpdates.tentativeCompletionDate = body.tentativeCompletionDate ? new Date(body.tentativeCompletionDate) : null;
         if (body.panelsNewReplace !== undefined) roUpdates.panelsNewReplace = body.panelsNewReplace != null && body.panelsNewReplace !== "" ? Number(body.panelsNewReplace) : null;
@@ -93,6 +113,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
         const claim = body.insuranceClaim;
         const surveyPayload = body.survey;
+        const vehiclePayload = body.vehicle;
 
         await prisma.$transaction(async (tx) => {
             if (Object.keys(roUpdates).length > 0) {
@@ -105,7 +126,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                 const claimData: Record<string, unknown> = {};
                 if (claim.claimNo !== undefined) claimData.claimNo = claim.claimNo ? String(claim.claimNo).trim() : null;
                 if (claim.claimIntimationDate !== undefined) claimData.claimIntimationDate = claim.claimIntimationDate ? new Date(claim.claimIntimationDate) : null;
-                if (claim.hapFlag !== undefined) claimData.hapFlag = Boolean(claim.hapFlag);
+                if (claim.hapFlag !== undefined) {
+                    // If hapFlag is explicitly null, do not overwrite the existing value with null,
+                    // since the database column is non-nullable. Only update when it's a boolean.
+                    if (claim.hapFlag === true || claim.hapFlag === false) {
+                        claimData.hapFlag = claim.hapFlag;
+                    }
+                }
                 if (claim.insuranceCompany !== undefined) claimData.insuranceCompany = claim.insuranceCompany ? String(claim.insuranceCompany).trim() : "";
                 if (ro.insuranceClaim) {
                     if (Object.keys(claimData).length > 0) {
@@ -117,11 +144,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                 } else {
                     await tx.insuranceClaim.create({
                         data: {
-                            roId: id,
+                            repairOrder: {
+                                connect: { id },
+                            },
                             insuranceCompany: (claim.insuranceCompany && String(claim.insuranceCompany).trim()) || "",
                             claimNo: claim.claimNo ? String(claim.claimNo).trim() : null,
                             claimIntimationDate: claim.claimIntimationDate ? new Date(claim.claimIntimationDate) : null,
-                            hapFlag: Boolean(claim.hapFlag),
+                            // Only set hapFlag when it's a boolean; otherwise let DB default apply
+                            ...(claim.hapFlag === true || claim.hapFlag === false
+                                ? { hapFlag: claim.hapFlag }
+                                : {}),
                         },
                     });
                 }
@@ -135,6 +167,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                     await tx.survey.update({
                         where: { id: ro.survey!.id },
                         data: surveyData as Parameters<typeof tx.survey.update>[0]["data"],
+                    });
+                }
+            }
+
+            if (vehiclePayload && typeof vehiclePayload === "object" && ro.vehicle) {
+                const vehicleData: Record<string, unknown> = {};
+                if (vehiclePayload.registrationNo !== undefined) vehicleData.registrationNo = vehiclePayload.registrationNo ? String(vehiclePayload.registrationNo).trim() : "";
+                if (vehiclePayload.model !== undefined) vehicleData.model = vehiclePayload.model ? String(vehiclePayload.model).trim() : "";
+
+                const customerData: Record<string, unknown> = {};
+                if (vehiclePayload.customerName !== undefined) customerData.name = vehiclePayload.customerName ? String(vehiclePayload.customerName).trim() : "";
+                if (vehiclePayload.customerMobile !== undefined) customerData.mobile = vehiclePayload.customerMobile ? String(vehiclePayload.customerMobile).trim() : "";
+
+                if (Object.keys(vehicleData).length > 0) {
+                    await tx.vehicle.update({
+                        where: { id: ro.vehicle.id },
+                        data: vehicleData as Parameters<typeof tx.vehicle.update>[0]["data"],
+                    });
+                }
+
+                if (ro.vehicle.customer && Object.keys(customerData).length > 0) {
+                    await tx.customer.update({
+                        where: { id: ro.vehicle.customer.id },
+                        data: customerData as Parameters<typeof tx.customer.update>[0]["data"],
                     });
                 }
             }

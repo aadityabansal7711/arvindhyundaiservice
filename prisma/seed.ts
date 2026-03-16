@@ -76,7 +76,6 @@ async function main() {
     const hashedPassword = await bcrypt.hash('admin123', 10);
 
     const adminUsers = [
-        { email: 'admin@dealerserviceops.com', name: 'Admin User' },
         { email: 'mayank.arvind.bansal@gmail.com', name: 'Mayank Bansal' }, // App owner
     ];
 

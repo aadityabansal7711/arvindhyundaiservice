@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { name, email, phone, roleId, branchId } = body;
+        const { name, email, phone, roleId, branchId, branchIds } = body;
 
         if (typeof name !== "string" || !name.trim()) {
             return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -55,6 +55,17 @@ export async function POST(req: NextRequest) {
         }
         if (typeof roleId !== "string" || !roleId) {
             return NextResponse.json({ error: "Role is required" }, { status: 400 });
+        }
+
+        let effectiveBranchId: string | null = null;
+        if (Array.isArray(branchIds) && branchIds.length > 0) {
+            effectiveBranchId = String(branchIds[0]);
+        } else if (typeof branchId === "string" && branchId.trim()) {
+            effectiveBranchId = branchId.trim();
+        }
+
+        if (!effectiveBranchId) {
+            return NextResponse.json({ error: "At least one branch is required" }, { status: 400 });
         }
 
         const existing = await prisma.user.findUnique({
@@ -76,7 +87,7 @@ export async function POST(req: NextRequest) {
                 email: emailNorm,
                 phone: phone === "" || phone == null ? null : String(phone).trim(),
                 roleId,
-                branchId: branchId === "" || branchId == null ? null : branchId,
+                branchId: effectiveBranchId,
                 passwordHash,
                 active: true,
             },

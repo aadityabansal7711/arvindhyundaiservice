@@ -125,7 +125,7 @@ model InsuranceClaim {
   insuranceCompany     String
   policyNo             String?
   claimNo              String?
-  hapFlag              Boolean     @default(false)
+  hapFlag              Boolean?
   claimIntimationDate  DateTime?
 }
 

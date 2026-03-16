@@ -110,9 +110,10 @@ export default function NewROPage() {
             const id = res?.id;
             if (!id) {
                 setError("Invalid response from server. Please try again.");
+                setIsSubmitting(false);
                 return;
             }
-            router.push(`/ro/${id}`);
+            router.push("/ro");
         } catch (err: any) {
             setError(err?.message || "Failed to create RO.");
         } finally {
@@ -334,7 +335,7 @@ export default function NewROPage() {
                             )}
                         </div>
 
-                        {/* Photos (compressed to max 100KB each) */}
+                        {/* Photos */}
                         <div>
                             <label className="block text-xs font-bold text-black uppercase tracking-widest mb-2">
                                 Photos
@@ -360,7 +361,7 @@ export default function NewROPage() {
                                     className="flex items-center gap-2 px-4 py-3 bg-slate-100 border border-slate-200 border-dashed rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 hover:border-slate-300 transition-colors"
                                 >
                                     <Camera className="w-5 h-5" />
-                                    Add photos (max 100KB each)
+                                    Add photos
                                 </button>
                                 {photoFiles.length > 0 && (
                                     <span className="text-slate-500 text-sm self-center">
@@ -403,19 +404,26 @@ export default function NewROPage() {
                         </Link>
                         <button
                             type="submit"
-                            disabled={isSubmitting}
+                            aria-disabled={isSubmitting}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onDoubleClick={(e) => e.preventDefault()}
+                            onMouseUp={() => window.getSelection?.()?.removeAllRanges()}
+                            onSelect={(e) => e.preventDefault()}
                             className={cn(
-                                "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all",
-                                "bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                "inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all select-none",
+                                "bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700",
+                                isSubmitting && "opacity-50 cursor-not-allowed pointer-events-none",
+                                "min-w-[140px]"
                             )}
+                            style={{ userSelect: "none", WebkitUserSelect: "none" }}
                         >
                             {isSubmitting ? (
                                 <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Creating...
+                                    <Loader2 className="w-4 h-4 animate-spin select-none" />
+                                    <span className="pointer-events-none select-none">Creating...</span>
                                 </>
                             ) : (
-                                "Create RO"
+                                <span className="pointer-events-none select-none">Create RO</span>
                             )}
                         </button>
                     </div>

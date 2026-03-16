@@ -32,7 +32,7 @@ export default function UserManagementPage() {
         name: "",
         email: "",
         roleId: "",
-        branchId: "",
+        branchIds: [] as string[],
     });
     const [addSaving, setAddSaving] = useState(false);
     const [addError, setAddError] = useState("");
@@ -107,7 +107,7 @@ export default function UserManagementPage() {
             name: "",
             email: "",
             roleId: metadata?.roles?.[0]?.id ?? "",
-            branchId: "",
+            branchIds: metadata?.branches?.[0]?.id ? [metadata.branches[0].id] : [],
         });
         setAddError("");
         setShowAddModal(true);
@@ -115,6 +115,10 @@ export default function UserManagementPage() {
 
     const handleAddSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!addForm.branchIds || addForm.branchIds.length === 0) {
+            setAddError("At least one branch must be selected.");
+            return;
+        }
         setAddSaving(true);
         setAddError("");
         try {
@@ -122,7 +126,7 @@ export default function UserManagementPage() {
                 name: addForm.name.trim(),
                 email: addForm.email.trim(),
                 roleId: addForm.roleId || undefined,
-                branchId: addForm.branchId.trim() || undefined,
+                branchIds: addForm.branchIds,
             });
             setShowAddModal(false);
             await fetchUsers();
@@ -290,17 +294,38 @@ export default function UserManagementPage() {
                                     </div>
                                     {metadata.branches?.length > 0 && (
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Branch (optional)</label>
-                                            <select
-                                                value={addForm.branchId}
-                                                onChange={(e) => setAddForm((f) => ({ ...f, branchId: e.target.value }))}
-                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                            >
-                                                <option value="">None</option>
-                                                {metadata.branches.map((b) => (
-                                                    <option key={b.id} value={b.id}>{b.name}</option>
-                                                ))}
-                                            </select>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                                Branch (required, select one or more)
+                                            </label>
+                                            <div className="space-y-1 rounded-xl border border-slate-200 px-3 py-2 bg-white">
+                                                {metadata.branches.map((b) => {
+                                                    const checked = addForm.branchIds.includes(b.id);
+                                                    return (
+                                                        <label
+                                                            key={b.id}
+                                                            className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                                checked={checked}
+                                                                onChange={(e) => {
+                                                                    setAddForm((f) => {
+                                                                        const next = new Set(f.branchIds);
+                                                                        if (e.target.checked) next.add(b.id);
+                                                                        else next.delete(b.id);
+                                                                        return { ...f, branchIds: Array.from(next) };
+                                                                    });
+                                                                }}
+                                                            />
+                                                            <span>{b.name}</span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                Tick one or more branches for this user.
+                                            </p>
                                         </div>
                                     )}
                                 </>

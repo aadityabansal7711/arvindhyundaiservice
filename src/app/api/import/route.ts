@@ -143,7 +143,10 @@ export async function POST(req: NextRequest) {
 
 async function processRORegisterRow(row: any, roNo: string) {
     // 1. Ensure Customer & Vehicle
-    const regNo = row["Registration No"]?.toString() || row["Reg No"]?.toString();
+    const regNo =
+        row["Registration No"]?.toString() ||
+        row["Reg No"]?.toString() ||
+        row["Reg NO"]?.toString();
     if (!regNo) return;
 
     const vehicle = await prisma.vehicle.upsert({
@@ -157,7 +160,10 @@ async function processRORegisterRow(row: any, roNo: string) {
             customer: {
                 create: {
                     name: row["Customer Name"]?.toString() || "WALK-IN",
-                    mobile: row["Mobile"]?.toString() || "0000000000",
+                    mobile:
+                        row["Mobile"]?.toString() ||
+                        row["Mobile Number"]?.toString() ||
+                        "0000000000",
                 }
             }
         }
@@ -167,55 +173,104 @@ async function processRORegisterRow(row: any, roNo: string) {
     const ro = await prisma.repairOrder.upsert({
         where: { roNo },
         update: {
-            vehicleInDate: parseExcelDate(row["Vehicle in date"]) || new Date(),
+            vehicleInDate:
+                parseExcelDate(row["Vehicle in date"]) ||
+                parseExcelDate(row["Vehicle IN"]) ||
+                new Date(),
             vehicleOutDate: parseExcelDate(row["Vehicle Out-date"]),
-            currentStatus: row["Current Status"]?.toString() || "OPEN",
+            currentStatus:
+                row["Current Status"]?.toString() ||
+                row["Status"]?.toString() ||
+                "OPEN",
             committedDeliveryDate: parseExcelDate(row["Committed Date of Delivery"]),
+            serviceAdvisorName: row["Service advisor"]?.toString(),
+            workStartDate: parseExcelDate(row["START DATE"]),
+            tentativeCompletionDate: parseExcelDate(row["TENTATIVE COMPLETION"]),
+            panelsNewReplace: row["PANELS NEW (REPLACE)"] ? parseInt(row["PANELS NEW (REPLACE)"]) : null,
+            panelsDent: row["PANELS DENT"] ? parseInt(row["PANELS DENT"]) : null,
         },
         create: {
             roNo,
             vehicleId: vehicle.id,
-            vehicleInDate: parseExcelDate(row["Vehicle in date"]) || new Date(),
+            vehicleInDate:
+                parseExcelDate(row["Vehicle in date"]) ||
+                parseExcelDate(row["Vehicle IN"]) ||
+                new Date(),
             vehicleOutDate: parseExcelDate(row["Vehicle Out-date"]),
-            currentStatus: row["Current Status"]?.toString() || "OPEN",
+            currentStatus:
+                row["Current Status"]?.toString() ||
+                row["Status"]?.toString() ||
+                "OPEN",
             committedDeliveryDate: parseExcelDate(row["Committed Date of Delivery"]),
+            serviceAdvisorName: row["Service advisor"]?.toString(),
+            workStartDate: parseExcelDate(row["START DATE"]),
+            tentativeCompletionDate: parseExcelDate(row["TENTATIVE COMPLETION"]),
+            panelsNewReplace: row["PANELS NEW (REPLACE)"] ? parseInt(row["PANELS NEW (REPLACE)"]) : null,
+            panelsDent: row["PANELS DENT"] ? parseInt(row["PANELS DENT"]) : null,
         }
     });
 
     // 3. Upsert Insurance Claim
-    if (row["Insurance Company Name"]) {
+    const insuranceCompany =
+        row["Insurance Company Name"]?.toString() ||
+        row["Insurance Co"]?.toString();
+    if (insuranceCompany) {
+        const hapRaw = (row["HAP/N HAP"] ?? row["HAP/NHAP"])
+            ?.toString()
+            ?.toUpperCase();
+        const hapFlagValue = hapRaw
+            ? hapRaw.includes("HAP")
+                ? true
+                : hapRaw.includes("NHAP")
+                ? false
+                : null
+            : null;
+
         await prisma.insuranceClaim.upsert({
             where: { roId: ro.id },
             update: {
-                insuranceCompany: row["Insurance Company Name"]?.toString(),
+                insuranceCompany,
                 policyNo: row["Policy Number"]?.toString(),
-                claimNo: row["Claim Number"]?.toString(),
-                hapFlag: row["HAP/N HAP"]?.toString()?.includes("HAP") || false,
-                claimIntimationDate: parseExcelDate(row["Claim Intimation Date"]),
+                claimNo: (row["Claim Number"] ?? row["CLAIM NO"])?.toString(),
+                hapFlag: hapFlagValue,
+                claimIntimationDate:
+                    parseExcelDate(row["Claim Intimation Date"]) ||
+                    parseExcelDate(row["CLAIM DATE"]),
             },
             create: {
                 roId: ro.id,
-                insuranceCompany: row["Insurance Company Name"]?.toString(),
+                insuranceCompany,
                 policyNo: row["Policy Number"]?.toString(),
-                claimNo: row["Claim Number"]?.toString(),
-                hapFlag: row["HAP/N HAP"]?.toString()?.includes("HAP") || false,
-                claimIntimationDate: parseExcelDate(row["Claim Intimation Date"]),
+                claimNo: (row["Claim Number"] ?? row["CLAIM NO"])?.toString(),
+                hapFlag: hapFlagValue,
+                claimIntimationDate:
+                    parseExcelDate(row["Claim Intimation Date"]) ||
+                    parseExcelDate(row["CLAIM DATE"]),
             }
         });
     }
 
     // 4. Upsert Survey
-    if (row["Surveyor"]) {
+    const surveyorName =
+        row["Surveyor"]?.toString() ||
+        row["SURVEYOR NAME"]?.toString();
+    if (surveyorName || row["Survey date"] || row["SURVEY DATE"] || row["APPROVAL DATE"]) {
         await prisma.survey.upsert({
             where: { roId: ro.id },
             update: {
-                surveyorName: row["Surveyor"]?.toString(),
-                surveyDate: parseExcelDate(row["Survey date"]),
+                surveyorName: surveyorName || undefined,
+                surveyDate:
+                    parseExcelDate(row["Survey date"]) ||
+                    parseExcelDate(row["SURVEY DATE"]),
+                approvalDate: parseExcelDate(row["APPROVAL DATE"]),
             },
             create: {
                 roId: ro.id,
-                surveyorName: row["Surveyor"]?.toString(),
-                surveyDate: parseExcelDate(row["Survey date"]),
+                surveyorName: surveyorName || undefined,
+                surveyDate:
+                    parseExcelDate(row["Survey date"]) ||
+                    parseExcelDate(row["SURVEY DATE"]),
+                approvalDate: parseExcelDate(row["APPROVAL DATE"]),
             }
         });
     }

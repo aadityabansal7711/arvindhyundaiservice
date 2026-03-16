@@ -155,13 +155,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         >
                             <Menu className="w-6 h-6" />
                         </button>
-                        <div className="relative hidden md:block w-64 lg:w-96 flex-shrink-0">
-                            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <input
-                                placeholder="Search RO, Reg No, Customer..."
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400/50 focus:bg-white transition-all shadow-sm"
-                            />
-                        </div>
+                        {pathname !== "/ro/new" && (
+                            <div className="relative hidden md:block w-64 lg:w-96 flex-shrink-0">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                <input
+                                    placeholder="Search RO, Reg No, Customer..."
+                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400/50 focus:bg-white transition-all shadow-sm"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex items-center gap-2 lg:gap-4 flex-shrink-0">
