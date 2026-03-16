@@ -46,15 +46,38 @@ export default function DataPage() {
     const [showBranchModal, setShowBranchModal] = useState(false);
     const [showOptionModal, setShowOptionModal] = useState(false);
 
+    const [loadedRoles, setLoadedRoles] = useState(false);
+    const [loadedBranches, setLoadedBranches] = useState(false);
+    const [loadedOptions, setLoadedOptions] = useState(false);
+
     const fetchRoles = () => apiGet<Role[]>("/api/data/roles").then(setRoles).catch(() => setRoles([]));
     const fetchBranches = () => apiGet<Branch[]>("/api/data/branches").then(setBranches).catch(() => setBranches([]));
     const fetchOptions = () => apiGet<DropdownOption[]>("/api/data/options").then(setOptions).catch(() => setOptions([]));
 
+    // Lazy-load only the active tab's data to speed up initial page load
     useEffect(() => {
-        setLoading(true);
-        Promise.all([fetchRoles(), fetchBranches(), fetchOptions()])
-            .finally(() => setLoading(false));
-    }, []);
+        if (activeTab === "roles" && !loadedRoles) {
+            setLoading(true);
+            fetchRoles().finally(() => {
+                setLoadedRoles(true);
+                setLoading(false);
+            });
+        } else if (activeTab === "branches" && !loadedBranches) {
+            setLoading(true);
+            fetchBranches().finally(() => {
+                setLoadedBranches(true);
+                setLoading(false);
+            });
+        } else if (activeTab === "options" && !loadedOptions) {
+            setLoading(true);
+            fetchOptions().finally(() => {
+                setLoadedOptions(true);
+                setLoading(false);
+            });
+        } else {
+            setLoading(false);
+        }
+    }, [activeTab, loadedRoles, loadedBranches, loadedOptions]);
 
     const refetch = () => {
         if (activeTab === "roles") fetchRoles();

@@ -1,5 +1,40 @@
 # Supabase + Prisma Setup
 
+## Everything in Supabase
+
+When configured correctly, **all app data and auth live in Supabase**:
+
+| What | Where in Supabase |
+|------|-------------------|
+| **All app data** (users, ROs, vehicles, branches, options, etc.) | **Supabase Postgres** — Prisma writes to the database at `DATABASE_URL`. When that URL is your Supabase project (pooler + direct), every table is in Supabase. |
+| **Login / passwords** | **Supabase Auth** — sign-in, user creation, and password changes go through Supabase Auth; `User.supabaseAuthId` links app users to `auth.users`. |
+| **RO photos** | **Supabase Postgres** — stored as JSON in `RepairOrder.photos` (base64). Optionally you can later move these to Supabase Storage and store URLs instead. |
+
+### Checklist: ensure everything is in Supabase
+
+1. **Use Supabase as your database**
+   - In [Supabase Dashboard](https://app.supabase.com) → your project → **Settings → Database**, copy:
+     - **Connection string (URI)** for "Transaction" mode (pooler, port **6543**) → use as `DATABASE_URL` (add `?pgbouncer=true&sslmode=require` if not present).
+     - **Connection string (URI)** for "Session" mode (direct, port **5432**) → use as `DIRECT_URL`.
+   - Put both in `.env` (and in Vercel/hosting env vars for production).
+
+2. **Apply migrations to Supabase**
+   ```bash
+   npx prisma migrate deploy
+   ```
+   So all tables (User, Branch, RepairOrder, etc.) exist in Supabase.
+
+3. **Configure Supabase Auth**
+   - In Supabase: **Authentication → Providers → Email** — enable Email, set "Confirm email" as needed.
+   - In `.env` set: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (from **Settings → API**).
+
+4. **Verify**
+   - Call `GET /api/supabase-verify` (when the app is running). It checks that the app can reach Supabase DB and Auth.
+
+After this, the app does not use any other database or auth provider; everything is in Supabase.
+
+---
+
 ## Why data might not be updating in Supabase
 
 1. **Migrations not applied**  
