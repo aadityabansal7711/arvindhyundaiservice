@@ -108,12 +108,14 @@ export default function DataPage() {
     };
 
     const handleDeleteRole = async (r: Role) => {
-        if (!confirm(`Delete role "${r.name}"?`)) return;
         setError("");
+        // Optimistic UI: remove role immediately for instant feedback
+        setRoles((prev) => prev.filter((role) => role.id !== r.id));
         try {
             await apiDelete(`/api/data/roles/${r.id}`);
-            fetchRoles();
         } catch (err: any) {
+            // On error, refetch to restore correct state and show message
+            fetchRoles();
             setError(err?.message || "Failed to delete role");
         }
     };
