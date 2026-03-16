@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useSession } from "next-auth/react";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { Filter, Download, Search, Wrench, Plus, Pencil, X } from "lucide-react";
 import { apiGet, apiPatch } from "@/lib/api";
@@ -33,6 +34,7 @@ type RO = {
 };
 
 export default function WorkRegisterPage() {
+    const { data: session } = useSession();
     const [searchTerm, setSearchTerm] = useState("");
     const [ros, setRos] = useState<RO[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +50,10 @@ export default function WorkRegisterPage() {
     const [branches, setBranches] = useState<Branch[]>([]);
     const [branchId, setBranchId] = useState("");
 
+    const userRole = (session?.user as any)?.role as string | undefined;
+    const userBranchId = (session?.user as any)?.branchId as string | undefined;
+    const isManager = userRole?.toLowerCase() === "manager";
+
     const fetchROs = async () => {
         setIsLoading(true);
         try {
@@ -55,7 +61,8 @@ export default function WorkRegisterPage() {
                 search: searchTerm,
                 limit: "80",
             });
-            if (branchId) params.set("branchId", branchId);
+            const effectiveBranchId = isManager && userBranchId ? userBranchId : branchId;
+            if (effectiveBranchId) params.set("branchId", effectiveBranchId);
             const data = await apiGet<RO[]>(`/api/ro?${params.toString()}`);
             setRos(data);
         } catch (err) {
@@ -74,6 +81,12 @@ export default function WorkRegisterPage() {
     }, [searchTerm, branchId]);
 
     useEffect(() => {
+        if (isManager && userBranchId) {
+            setBranchId(userBranchId);
+        }
+    }, [isManager, userBranchId]);
+
+    useEffect(() => {
         apiGet<Branch[]>("/api/data/branches")
             .then(setBranches)
             .catch(() => setBranches([]));
@@ -90,10 +103,13 @@ export default function WorkRegisterPage() {
         : workList;
 
     const openEdit = (ro: RO) => {
+        const today = format(new Date(), "yyyy-MM-dd");
         setEditingRo(ro);
         setForm({
-            workStartDate: ro.workStartDate ? format(new Date(ro.workStartDate), "yyyy-MM-dd") : "",
-            tentativeCompletionDate: ro.tentativeCompletionDate ? format(new Date(ro.tentativeCompletionDate), "yyyy-MM-dd") : "",
+            workStartDate: ro.workStartDate ? format(new Date(ro.workStartDate), "yyyy-MM-dd") : today,
+            tentativeCompletionDate: ro.tentativeCompletionDate
+                ? format(new Date(ro.tentativeCompletionDate), "yyyy-MM-dd")
+                : today,
             panelsNewReplace: ro.panelsNewReplace != null ? String(ro.panelsNewReplace) : "",
             panelsDent: ro.panelsDent != null ? String(ro.panelsDent) : "",
         });
@@ -160,14 +176,18 @@ export default function WorkRegisterPage() {
                         <select
                             value={branchId}
                             onChange={(e) => setBranchId(e.target.value)}
-                            className="w-full md:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+                            disabled={isManager}
+                            className="w-full md:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all disabled:opacity-60"
                         >
-                            <option value="">All branches</option>
-                            {branches.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                    {b.name}
-                                </option>
-                            ))}
+                            {!isManager && <option value="">All branches</option>}
+                            {branches.map((b) => {
+                                if (isManager && userBranchId && b.id !== userBranchId) return null;
+                                return (
+                                    <option key={b.id} value={b.id}>
+                                        {b.name}
+                                    </option>
+                                );
+                            })}
                         </select>
                     )}
                     <button className="p-3 sm:p-2.5 min-h-[44px] sm:min-h-0 bg-slate-50 border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-100 transition-all touch-manipulation">
@@ -199,7 +219,7 @@ export default function WorkRegisterPage() {
                                 <div className="flex justify-between items-start gap-2">
                                     <span className="font-semibold text-slate-900">{ro.roNo}</span>
                                     <span className={hasWorkFilled(ro) ? "text-emerald-600 text-sm font-medium" : "text-amber-600 text-sm"}>
-                                        {hasWorkFilled(ro) ? "Filled" : "Pending"}
+                                        {hasWorkFilled(ro) ? "Done" : "Not done"}
                                     </span>
                                 </div>
                                 <p className="text-sm text-slate-700 mt-1">
@@ -263,7 +283,7 @@ export default function WorkRegisterPage() {
                                             <td className="px-6 py-3 text-sm text-slate-700">{ro.panelsDent ?? "—"}</td>
                                             <td className="px-6 py-3 text-sm">
                                                 <span className={hasWorkFilled(ro) ? "text-emerald-600 font-medium" : "text-amber-600"}>
-                                                    {hasWorkFilled(ro) ? "Filled" : "Pending"}
+                                                    {hasWorkFilled(ro) ? "Done" : "Not done"}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-3">

@@ -28,7 +28,12 @@ export default function RORegisterPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const initialMount = useRef(true);
 
-  const canAdminRo = (session?.user as any)?.permissions?.includes("users.manage");
+  const userPermissions = (session?.user as any)?.permissions ?? [];
+  const userRole = (session?.user as any)?.role as string | undefined;
+  const userBranchId = (session?.user as any)?.branchId as string | undefined;
+  const canAdminRo = userPermissions.includes("users.manage");
+  const canEditRo = userPermissions.includes("ro.view");
+  const isManager = userRole?.toLowerCase() === "manager";
 
   const fetchROs = async () => {
     setIsLoading(true);
@@ -37,7 +42,8 @@ export default function RORegisterPage() {
         search: searchTerm,
         limit: "80",
       });
-      if (branchId) params.set("branchId", branchId);
+      const effectiveBranchId = isManager && userBranchId ? userBranchId : branchId;
+      if (effectiveBranchId) params.set("branchId", effectiveBranchId);
       const data = await apiGet<any[]>(`/api/ro?${params.toString()}`);
       setRos(data);
     } catch (err) {
@@ -46,6 +52,12 @@ export default function RORegisterPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (isManager && userBranchId) {
+      setBranchId(userBranchId);
+    }
+  }, [isManager, userBranchId]);
 
   const handleDelete = async (id: string) => {
     if (!canAdminRo || deletingId) return;
@@ -123,14 +135,18 @@ export default function RORegisterPage() {
             <select
               value={branchId}
               onChange={(e) => setBranchId(e.target.value)}
-              className="w-full sm:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
+              disabled={isManager}
+              className="w-full sm:w-56 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-black focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all disabled:opacity-60"
             >
-              <option value="">All branches</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
+              {!isManager && <option value="">All branches</option>}
+              {branches.map((b) => {
+                if (isManager && userBranchId && b.id !== userBranchId) return null;
+                return (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                );
+              })}
             </select>
           )}
         </div>
@@ -191,24 +207,28 @@ export default function RORegisterPage() {
                     {ro.insuranceClaim?.insuranceCompany || "OWNER CASH"}
                   </p>
                 </button>
-                {canAdminRo && (
+                {(canEditRo || canAdminRo) && (
                   <div className="mt-3 flex justify-end gap-2">
-                    <Link
-                      href={`/ro/${ro.id}/edit`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      Edit
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(ro.id)}
-                      disabled={deletingId === ro.id}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      {deletingId === ro.id ? "Deleting..." : "Delete"}
-                    </button>
+                    {canEditRo && (
+                      <Link
+                        href={`/ro/${ro.id}/edit`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        Edit
+                      </Link>
+                    )}
+                    {canAdminRo && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(ro.id)}
+                        disabled={deletingId === ro.id}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        {deletingId === ro.id ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -249,7 +269,7 @@ export default function RORegisterPage() {
                   <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap">
                     SERVICE ADVISOR
                   </th>
-                  {canAdminRo && (
+                  {(canEditRo || canAdminRo) && (
                     <th className="px-4 py-3 text-xs font-bold text-black uppercase tracking-widest whitespace-nowrap text-right">
                       Actions
                     </th>
@@ -261,7 +281,7 @@ export default function RORegisterPage() {
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="animate-pulse">
                       <td
-                        colSpan={canAdminRo ? 9 : 8}
+                        colSpan={canEditRo || canAdminRo ? 9 : 8}
                         className="px-4 py-6"
                       >
                         <div className="h-4 bg-slate-100 rounded w-full" />
@@ -271,7 +291,7 @@ export default function RORegisterPage() {
                 ) : ros.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={canAdminRo ? 9 : 8}
+                      colSpan={canEditRo || canAdminRo ? 9 : 8}
                       className="px-4 py-12 text-center"
                     >
                       <div className="flex flex-col items-center justify-center space-y-2 opacity-40">
@@ -315,25 +335,29 @@ export default function RORegisterPage() {
                       <td className="px-4 py-3 text-sm text-black whitespace-nowrap">
                         {ro.serviceAdvisorName ?? ro.advisor?.name ?? "—"}
                       </td>
-                      {canAdminRo && (
+                      {(canEditRo || canAdminRo) && (
                         <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-2">
-                            <Link
-                              href={`/ro/${ro.id}/edit`}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            >
-                              <Pencil className="w-3 h-3" />
-                              Edit
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(ro.id)}
-                              disabled={deletingId === ro.id}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              {deletingId === ro.id ? "Deleting..." : "Delete"}
-                            </button>
+                            {canEditRo && (
+                              <Link
+                                href={`/ro/${ro.id}/edit`}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                              >
+                                <Pencil className="w-3 h-3" />
+                                Edit
+                              </Link>
+                            )}
+                            {canAdminRo && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(ro.id)}
+                                disabled={deletingId === ro.id}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                {deletingId === ro.id ? "Deleting..." : "Delete"}
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}

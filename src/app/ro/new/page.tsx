@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { ArrowLeft, ClipboardList, Loader2, Camera, X } from "lucide-react";
@@ -15,6 +16,7 @@ type Branch = { id: string; name: string };
 
 export default function NewROPage() {
     const router = useRouter();
+    const { data: session } = useSession();
     const [roNo, setRoNo] = useState("");
     const [branchId, setBranchId] = useState("");
     const [newRegNo, setNewRegNo] = useState("");
@@ -33,12 +35,22 @@ export default function NewROPage() {
     const [photoFiles, setPhotoFiles] = useState<File[]>([]);
     const photoInputRef = useRef<HTMLInputElement>(null);
 
+    const userRole = (session?.user as any)?.role as string | undefined;
+    const userBranchId = (session?.user as any)?.branchId as string | undefined;
+    const isManager = userRole?.toLowerCase() === "manager";
+
     useEffect(() => {
         apiGet<DropdownOption[]>("/api/data/options?group=insurance_company").then(setInsuranceOptions).catch(() => setInsuranceOptions([]));
         apiGet<DropdownOption[]>("/api/data/options?group=model").then(setModelOptions).catch(() => setModelOptions([]));
         apiGet<DropdownOption[]>("/api/data/options?group=service_advisor").then(setServiceAdvisorOptions).catch(() => setServiceAdvisorOptions([]));
         apiGet<Branch[]>("/api/data/branches").then(setBranches).catch(() => setBranches([]));
     }, []);
+
+    useEffect(() => {
+        if (isManager && userBranchId) {
+            setBranchId(userBranchId);
+        }
+    }, [isManager, userBranchId]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -51,6 +63,11 @@ export default function NewROPage() {
         }
         if (!branchId.trim()) {
             setError("Please select a branch.");
+            return;
+        }
+
+        if (photoFiles.length === 0) {
+            setError("Please add at least one photo before creating a new RO.");
             return;
         }
 
@@ -155,15 +172,19 @@ export default function NewROPage() {
                                 <select
                                     value={branchId}
                                     onChange={(e) => setBranchId(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
+                                    disabled={isManager}
+                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none disabled:opacity-60"
                                     required
                                 >
-                                    <option value="">Select branch</option>
-                                    {branches.map((b) => (
-                                        <option key={b.id} value={b.id}>
-                                            {b.name}
-                                        </option>
-                                    ))}
+                                    {!isManager && <option value="">Select branch</option>}
+                                    {branches.map((b) => {
+                                        if (isManager && userBranchId && b.id !== userBranchId) return null;
+                                        return (
+                                            <option key={b.id} value={b.id}>
+                                                {b.name}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             ) : (
                                 <p className="px-4 py-2.5 text-slate-500 text-sm border border-slate-200 rounded-xl bg-slate-50">
@@ -335,10 +356,10 @@ export default function NewROPage() {
                             )}
                         </div>
 
-                        {/* Photos */}
+                        {/* Photos (required) */}
                         <div>
                             <label className="block text-xs font-bold text-black uppercase tracking-widest mb-2">
-                                Photos
+                                Photos <span className="text-rose-500">*</span>
                             </label>
                             <input
                                 ref={photoInputRef}

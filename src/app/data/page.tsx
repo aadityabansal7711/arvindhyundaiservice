@@ -27,7 +27,7 @@ const OPTION_GROUPS: { key: string; label: string }[] = [
 ];
 
 export default function DataPage() {
-    const { update: updateSession } = useSession();
+    const { data: session, update: updateSession } = useSession();
     const [activeTab, setActiveTab] = useState<"roles" | "branches" | "options">("roles");
 
     const [roles, setRoles] = useState<Role[]>([]);
@@ -51,9 +51,20 @@ export default function DataPage() {
     const [loadedBranches, setLoadedBranches] = useState(false);
     const [loadedOptions, setLoadedOptions] = useState(false);
 
+    const userRole = (session?.user as any)?.role as string | undefined;
+    const userPermissions = (session?.user as any)?.permissions ?? [];
+    const isManager = userRole?.toLowerCase() === "manager";
+    const canManageData = userPermissions.includes("users.manage");
+
     const fetchRoles = () => apiGet<Role[]>("/api/data/roles").then(setRoles).catch(() => setRoles([]));
     const fetchBranches = () => apiGet<Branch[]>("/api/data/branches").then(setBranches).catch(() => setBranches([]));
     const fetchOptions = () => apiGet<DropdownOption[]>("/api/data/options").then(setOptions).catch(() => setOptions([]));
+
+    useEffect(() => {
+        if (isManager) {
+            setActiveTab("options");
+        }
+    }, [isManager]);
 
     // Lazy-load only the active tab's data to speed up initial page load
     useEffect(() => {
@@ -225,6 +236,25 @@ export default function DataPage() {
             .filter((o) => o.groupKey === groupKey)
             .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
 
+    if (!canManageData && !isManager) {
+        return (
+            <DashboardLayout>
+                <div className="space-y-6">
+                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Data Page</h1>
+                    <p className="text-slate-600">You do not have access to this page.</p>
+                </div>
+            </DashboardLayout>
+        );
+    }
+
+    const tabs: { id: "roles" | "branches" | "options"; label: string; icon: typeof Users }[] = [
+        { id: "roles", label: "Roles", icon: Users },
+        { id: "branches", label: "Branches", icon: Building2 },
+        { id: "options", label: "Dropdown options", icon: ListOrdered },
+    ];
+
+    const visibleTabs = isManager ? tabs.filter((t) => t.id === "options") : tabs;
+
     return (
         <DashboardLayout>
             <div className="space-y-6">
@@ -240,11 +270,7 @@ export default function DataPage() {
 
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="flex border-b border-slate-100 bg-slate-50/50">
-                        {[
-                            { id: "roles" as const, label: "Roles", icon: Users },
-                            { id: "branches" as const, label: "Branches", icon: Building2 },
-                            { id: "options" as const, label: "Dropdown options", icon: ListOrdered },
-                        ].map((tab) => (
+                        {visibleTabs.map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}

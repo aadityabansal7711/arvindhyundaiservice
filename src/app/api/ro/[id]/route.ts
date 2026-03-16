@@ -158,16 +158,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                     });
                 }
             }
-            if (surveyPayload && typeof surveyPayload === "object" && ro.survey) {
+            if (surveyPayload && typeof surveyPayload === "object") {
                 const surveyData: Record<string, unknown> = {};
                 if (surveyPayload.surveyorName !== undefined) surveyData.surveyorName = surveyPayload.surveyorName ? String(surveyPayload.surveyorName).trim() : null;
                 if (surveyPayload.surveyDate !== undefined) surveyData.surveyDate = surveyPayload.surveyDate ? new Date(surveyPayload.surveyDate) : null;
                 if (surveyPayload.approvalDate !== undefined) surveyData.approvalDate = surveyPayload.approvalDate ? new Date(surveyPayload.approvalDate) : null;
-                if (Object.keys(surveyData).length > 0) {
-                    await tx.survey.update({
-                        where: { id: ro.survey!.id },
-                        data: surveyData as Parameters<typeof tx.survey.update>[0]["data"],
-                    });
+
+                if (ro.survey) {
+                    if (Object.keys(surveyData).length > 0) {
+                        await tx.survey.update({
+                            where: { id: ro.survey.id },
+                            data: surveyData as Parameters<typeof tx.survey.update>[0]["data"],
+                        });
+                    }
+                } else {
+                    if (Object.keys(surveyData).length > 0) {
+                        await tx.survey.create({
+                            data: {
+                                repairOrder: {
+                                    connect: { id },
+                                },
+                                ...surveyData,
+                            } as Parameters<typeof tx.survey.create>[0]["data"],
+                        });
+                    }
                 }
             }
 

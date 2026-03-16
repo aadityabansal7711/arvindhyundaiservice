@@ -36,6 +36,13 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        if (!Array.isArray(photos) || photos.length === 0) {
+            return NextResponse.json(
+                { error: "At least one photo is required to open a new RO" },
+                { status: 400 }
+            );
+        }
+
         const vehicle = await prisma.vehicle.findUnique({
             where: { id: vehicleId },
             include: { customer: true },
@@ -127,14 +134,27 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
+    const branchIdParam = searchParams.get("branchId") || "";
     const limit = Math.min(Number(searchParams.get("limit")) || 80, 500);
     const offset = Number(searchParams.get("offset")) || 0;
 
     try {
         const where: Prisma.RepairOrderWhereInput = {};
 
+        const user = session.user as any;
+        const userRole = (user?.role as string | undefined)?.toLowerCase();
+        const userBranchId = user?.branchId as string | undefined;
+
         if (status) {
             where.currentStatus = status;
+        }
+
+        const isManager = userRole === "manager";
+        const effectiveBranchId =
+            (isManager && userBranchId) ? userBranchId : branchIdParam || undefined;
+
+        if (effectiveBranchId) {
+            where.branchId = effectiveBranchId;
         }
 
         if (search.trim()) {

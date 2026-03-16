@@ -31,7 +31,6 @@ const sidebarItems = [
     { name: "Approval Register", href: "/approval-register", icon: CheckSquare, permission: "ro.view" },
     { name: "Work Register", href: "/work-register", icon: Wrench, permission: "ro.view" },
     { name: "Status Report", href: "/status-report", icon: BarChart3, permission: "ro.view" },
-    { name: "Import Center", href: "/import", icon: Upload, permission: "import.manage" },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -49,10 +48,37 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
     }, [session, router]);
 
+    const userRole = (session?.user as any)?.role as string | undefined;
     const userPermissions = (session?.user as any)?.permissions || [];
-    const filteredSidebarItems = sidebarItems.filter(item =>
-        !item.permission || userPermissions.includes(item.permission)
-    );
+    const isManager = userRole?.toLowerCase() === "manager";
+
+    const managerAllowedRoots = new Set([
+        "/dashboard",
+        "/ro",
+        "/approval-register",
+        "/work-register",
+        "/status-report",
+        "/data",
+    ]);
+
+    const filteredSidebarItems = sidebarItems.filter((item) => {
+        if (item.permission && !userPermissions.includes(item.permission)) {
+            return false;
+        }
+        if (isManager) {
+            const root = "/" + item.href.split("/")[1];
+            if (!managerAllowedRoots.has(root)) return false;
+        }
+        return true;
+    });
+
+    useEffect(() => {
+        if (!session || !isManager) return;
+        const root = "/" + pathname.split("/")[1];
+        if (!managerAllowedRoots.has(root)) {
+            router.replace("/dashboard");
+        }
+    }, [session, isManager, pathname, router]);
 
     return (
         <div className="min-h-screen bg-[var(--background)] flex">
