@@ -111,13 +111,18 @@ export default function NewROPage() {
             let photos: string[] = [];
             if (photoFiles.length > 0) {
                 photos = await compressImagesToMax100KB(photoFiles);
+                if (photos.length === 0) {
+                    setError("Selected photos could not be processed. Try JPG/PNG or a different HEIC image.");
+                    setIsSubmitting(false);
+                    return;
+                }
             }
             const payload: any = {
                 roNo: roNo.trim(),
                 vehicleId,
                 branchId: branchId.trim(),
                 vehicleInDate,
-                currentStatus: "OPEN",
+                currentStatus: "DOCUMENT_PENDING",
                 insuranceCompany: insuranceCompany.trim(),
                 serviceAdvisorName: serviceAdvisorName.trim(),
                 ...(photos.length > 0 ? { photos } : {}),
@@ -364,7 +369,7 @@ export default function NewROPage() {
                             <input
                                 ref={photoInputRef}
                                 type="file"
-                                accept="image/*"
+                                accept="image/*,.heic,.heif,image/heic,image/heif"
                                 multiple
                                 className="hidden"
                                 onChange={(e) => {

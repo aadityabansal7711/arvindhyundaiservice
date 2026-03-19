@@ -40,7 +40,7 @@ function LoginForm() {
                 if (password === "admin123") {
                     window.location.href = "/set-password";
                 } else {
-                    window.location.href = "/dashboard";
+                    window.location.href = "/bodyshop";
                 }
             }
         } catch {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import { Filter, Download, Search, FileCheck, Plus, Pencil, X } from "lucide-react";
 import { apiGet, apiPatch } from "@/lib/api";
@@ -23,7 +24,8 @@ type RO = {
     branch?: { id: string; name: string } | null;
 };
 
-export default function ClaimRegisterPage() {
+function ClaimRegisterPageInner() {
+    const searchParams = useSearchParams();
     const [searchTerm, setSearchTerm] = useState("");
     const [ros, setRos] = useState<RO[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +70,14 @@ export default function ClaimRegisterPage() {
         apiGet<Branch[]>("/api/data/branches")
             .then(setBranches)
             .catch(() => setBranches([]));
+    }, []);
+
+    useEffect(() => {
+        const roNo = searchParams.get("ro");
+        if (roNo) {
+            setSearchTerm(roNo);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const openEdit = (ro: RO) => {
@@ -358,5 +368,21 @@ export default function ClaimRegisterPage() {
                 </div>
             )}
         </DashboardLayout>
+    );
+}
+
+export default function ClaimRegisterPage() {
+    return (
+        <Suspense
+            fallback={
+                <DashboardLayout>
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center text-slate-500">
+                        Loading claim register...
+                    </div>
+                </DashboardLayout>
+            }
+        >
+            <ClaimRegisterPageInner />
+        </Suspense>
     );
 }

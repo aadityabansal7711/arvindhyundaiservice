@@ -1,36 +1,25 @@
 "use client";
 
-import { useState, useEffect, ReactNode } from "react";
+import { Suspense, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
-    LayoutDashboard,
-    ClipboardList,
     Users,
-    Upload,
     LogOut,
     Search,
     User as UserIcon,
     Menu,
     X,
     Car,
-    FileCheck,
-    CheckSquare,
-    Wrench,
-    BarChart3,
-    Database
+    Database,
+    KanbanSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
+import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
 
 const sidebarItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
-    { name: "RO Register", href: "/ro", icon: ClipboardList, permission: "ro.view" },
-    { name: "Claim Register", href: "/claim-register", icon: FileCheck, permission: "ro.view" },
-    { name: "Approval Register", href: "/approval-register", icon: CheckSquare, permission: "ro.view" },
-    { name: "Work Register", href: "/work-register", icon: Wrench, permission: "ro.view" },
-    { name: "Status Report", href: "/status-report", icon: BarChart3, permission: "ro.view" },
+    { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -53,11 +42,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const isManager = userRole?.toLowerCase() === "manager";
 
     const managerAllowedRoots = new Set([
-        "/dashboard",
-        "/ro",
-        "/approval-register",
-        "/work-register",
-        "/status-report",
+        "/bodyshop",
         "/data",
     ]);
 
@@ -72,11 +57,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         return true;
     });
 
+    const bodyshopItem = filteredSidebarItems.filter((i) => i.href.startsWith("/bodyshop"));
+    const nonBodyshopItems = filteredSidebarItems.filter((i) => !i.href.startsWith("/bodyshop"));
+
     useEffect(() => {
         if (!session || !isManager) return;
         const root = "/" + pathname.split("/")[1];
         if (!managerAllowedRoots.has(root)) {
-            router.replace("/dashboard");
+            router.replace("/bodyshop");
         }
     }, [session, isManager, pathname, router]);
 
@@ -119,7 +107,36 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-                    {filteredSidebarItems.map((item) => (
+                    {bodyshopItem.map((item) => (
+                        <Link
+                            key={item.name}
+                            href={item.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                                "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
+                                pathname.startsWith(item.href)
+                                    ? "bg-white/10 text-white font-medium shadow-inner"
+                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                            )}
+                        >
+                            <item.icon className={cn(
+                                "w-5 h-5 shrink-0",
+                                pathname.startsWith(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                            )} />
+                            {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
+                            {pathname.startsWith(item.href) && !isSidebarCollapsed && (
+                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                            )}
+                        </Link>
+                    ))}
+                    {pathname.startsWith("/bodyshop") && !isSidebarCollapsed && (
+                        <div className="mt-4">
+                            <Suspense fallback={<div className="bg-white/10 rounded-xl h-32 animate-pulse" />}>
+                                <SidebarStages />
+                            </Suspense>
+                        </div>
+                    )}
+                    {nonBodyshopItems.map((item) => (
                         <Link
                             key={item.name}
                             href={item.href}

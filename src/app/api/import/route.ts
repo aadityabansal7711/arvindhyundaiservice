@@ -181,7 +181,7 @@ async function processRORegisterRow(row: any, roNo: string) {
             currentStatus:
                 row["Current Status"]?.toString() ||
                 row["Status"]?.toString() ||
-                "OPEN",
+                "DOCUMENT_PENDING",
             committedDeliveryDate: parseExcelDate(row["Committed Date of Delivery"]),
             serviceAdvisorName: row["Service advisor"]?.toString(),
             workStartDate: parseExcelDate(row["START DATE"]),
@@ -200,7 +200,7 @@ async function processRORegisterRow(row: any, roNo: string) {
             currentStatus:
                 row["Current Status"]?.toString() ||
                 row["Status"]?.toString() ||
-                "OPEN",
+                "DOCUMENT_PENDING",
             committedDeliveryDate: parseExcelDate(row["Committed Date of Delivery"]),
             serviceAdvisorName: row["Service advisor"]?.toString(),
             workStartDate: parseExcelDate(row["START DATE"]),
