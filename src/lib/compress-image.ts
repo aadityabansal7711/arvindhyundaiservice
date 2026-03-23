@@ -1,10 +1,23 @@
-const MAX_SIZE_BYTES = 100 * 1024; // 100KB
-const MAX_FALLBACK_DATAURL_BYTES = 300 * 1024; // guardrail when canvas decode fails
+// Next.js route handlers can reject large JSON bodies; base64 expands size ~33%.
+// To make uploads deterministic, keep the final base64 data URL length very small.
+const MAX_SIZE_BYTES = 40 * 1024; // used for occasional blob/fallback size checks
+const MAX_FALLBACK_DATAURL_BYTES = 70 * 1024; // raw bytes (fallback only when encoding fails)
+const MAX_DATAURL_LENGTH = 80 * 1024; // final data URL string length cap (deterministic)
+/** Raw HEIC fallback only when conversion fails. */
+const MAX_HEIC_RAW_FALLBACK_BYTES = 800 * 1024;
+const COMPRESS_TIMEOUT_MS = 20000;
+const HEIC_COMPRESS_TIMEOUT_MS = 30000;
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Failed to read file as data URL"));
+      }
+    };
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
@@ -22,9 +35,10 @@ function isHeicLike(file: File): boolean {
 }
 
 async function convertHeicToJpeg(file: File): Promise<File> {
-  // heic2any is browser-only; dynamic import keeps server bundles clean.
-  const mod = await import("heic2any");
-  const heic2any = (mod as any).default ?? mod;
+  const mod = (await import("heic2any")) as {
+    default?: (opts: { blob: Blob; toType: string; quality: number }) => Promise<Blob | Blob[]>;
+  };
+  const heic2any = mod.default ?? (mod as unknown as (opts: { blob: Blob; toType: string; quality: number }) => Promise<Blob | Blob[]>);
   const converted = (await heic2any({
     blob: file,
     toType: "image/jpeg",
@@ -40,123 +54,177 @@ async function convertHeicToJpeg(file: File): Promise<File> {
 }
 
 /**
- * Compress an image file to at most 100KB. Uses canvas + JPEG quality.
+ * Resize + JPEG encode to keep payload small enough for uploads.
+ * Uses a dataURL fallback if JPEG toBlob returns null (known Chromium quirk).
+ * Falls back to fileToDataUrl if canvas fails entirely (e.g., hardware acceleration disabled).
+ */
+function compressRasterWithCanvas(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxDim = 1200;
+      let w = img.width || 1;
+      let h = img.height || 1;
+      if (w > maxDim || h > maxDim) {
+        if (w >= h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+
+      let canvas: HTMLCanvasElement | null = null;
+      let ctx: CanvasRenderingContext2D | null = null;
+      try {
+        canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        ctx = canvas.getContext("2d");
+      } catch {
+        // Canvas creation failed – fall through to fileToDataUrl
+      }
+
+      if (!canvas || !ctx) {
+        // Canvas not supported on this device; fall back to raw data URL.
+        if (file.size > MAX_FALLBACK_DATAURL_BYTES) {
+          reject(
+            new Error(
+              `Image "${file.name}" is too large (canvas unavailable). Please use a photo under 100KB.`
+            )
+          );
+          return;
+        }
+        void fileToDataUrl(file).then(resolve).catch(reject);
+        return;
+      }
+
+      try {
+        ctx.drawImage(img, 0, 0, w, h);
+      } catch {
+        // drawImage can fail for certain image types in some browsers.
+        if (file.size > MAX_FALLBACK_DATAURL_BYTES) {
+          reject(
+            new Error(
+              `Image "${file.name}" could not be processed. Please use a JPG/PNG under 100KB.`
+            )
+          );
+          return;
+        }
+        void fileToDataUrl(file).then(resolve).catch(reject);
+        return;
+      }
+
+      // Deterministic encoding path: only use toDataURL, and keep lowering quality
+      // until we fit the base64 length ceiling.
+      let q = 0.92;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        try {
+          const dataUrl = canvas!.toDataURL("image/jpeg", q);
+          if (dataUrl.length <= MAX_DATAURL_LENGTH) {
+            resolve(dataUrl);
+            return;
+          }
+        } catch {
+          // ignore and lower quality
+        }
+        q = Math.max(0.1, q - 0.1);
+      }
+
+      // Last resort: raw data URL only if the original file is already small-ish.
+      if (file.size <= MAX_FALLBACK_DATAURL_BYTES) {
+        void fileToDataUrl(file).then(resolve).catch(reject);
+        return;
+      }
+
+      reject(
+        new Error(
+          `Image "${file.name}" is too large to upload. Please use a smaller JPG/PNG.`
+        )
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      // Browser couldn't decode the image – fall back to raw data URL for smaller files.
+      if (file.size > MAX_FALLBACK_DATAURL_BYTES) {
+        reject(
+          new Error(
+            `Image "${file.name}" could not be decoded. Please use a JPG/PNG under 100KB.`
+          )
+        );
+        return;
+      }
+      void fileToDataUrl(file).then(resolve).catch(reject);
+    };
+    img.src = url;
+  });
+}
+
+/**
+ * Compress an image file to at most 100KB. Uses HEIC→JPEG conversion when needed, then canvas + JPEG quality.
  * Returns base64 data URL string (e.g. "data:image/jpeg;base64,...").
  */
-export function compressImageToMax100KB(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const run = async () => {
-            let input = file;
-            if (isHeicLike(file)) {
-                try {
-                    input = await convertHeicToJpeg(file);
-                } catch {
-                    // Keep original file and try fallback below.
-                    input = file;
-                }
-            }
+export async function compressImageToMax100KB(file: File): Promise<string> {
+  let workFile = file;
 
-            const img = new Image();
-            const url = URL.createObjectURL(input);
+  if (isHeicLike(file)) {
+    try {
+      workFile = await convertHeicToJpeg(file);
+    } catch {
+      if (file.size > MAX_HEIC_RAW_FALLBACK_BYTES) {
+        throw new Error(
+          `HEIC image "${file.name}" could not be converted. Try a smaller photo or export as JPG from your phone.`
+        );
+      }
+      return fileToDataUrl(file);
+    }
+  }
 
-            img.onload = () => {
-                URL.revokeObjectURL(url);
-                const maxDim = 1200;
-                let w = img.width;
-                let h = img.height;
-                if (w > maxDim || h > maxDim) {
-                    if (w >= h) {
-                        h = Math.round((h * maxDim) / w);
-                        w = maxDim;
-                    } else {
-                        w = Math.round((w * maxDim) / h);
-                        h = maxDim;
-                    }
-                }
-
-                const canvas = document.createElement("canvas");
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext("2d");
-                if (!ctx) {
-                    reject(new Error("Canvas not supported"));
-                    return;
-                }
-                ctx.drawImage(img, 0, 0, w, h);
-
-                let quality = 0.92;
-                const tryBlob = () => {
-                    canvas.toBlob(
-                        (blob) => {
-                            if (!blob) {
-                                reject(new Error("Failed to compress image"));
-                                return;
-                            }
-                            if (blob.size <= MAX_SIZE_BYTES || quality <= 0.1) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result as string);
-                                reader.onerror = () => reject(new Error("Failed to read blob"));
-                                reader.readAsDataURL(blob);
-                                return;
-                            }
-                            quality = Math.max(0.1, quality - 0.15);
-                            tryBlob();
-                        },
-                        "image/jpeg",
-                        quality
-                    );
-                };
-                tryBlob();
-            };
-
-            img.onerror = () => {
-                URL.revokeObjectURL(url);
-                // If browser can't decode the image, do NOT fall back to huge raw base64.
-                // First, retry HEIC/HEIF conversion (some browsers fail decode but heic2any works).
-                if (isHeicLike(file) && input === file) {
-                    void convertHeicToJpeg(file)
-                        .then((jpeg) => compressImageToMax100KB(jpeg))
-                        .then(resolve)
-                        .catch(() => {
-                            reject(
-                                new Error(
-                                    "This HEIC image can't be processed on this device. Please try a JPG/PNG."
-                                )
-                            );
-                        });
-                    return;
-                }
-
-                // Otherwise only allow a tiny fallback to avoid DB/payload blowups.
-                if (file.size > MAX_FALLBACK_DATAURL_BYTES) {
-                    reject(
-                        new Error(
-                            `Image "${file.name}" is too large to upload. Please use a smaller JPG/PNG.`
-                        )
-                    );
-                    return;
-                }
-
-                void fileToDataUrl(file).then(resolve).catch(reject);
-            };
-            img.src = url;
-        };
-
-        void run();
-    });
+  return compressRasterWithCanvas(workFile);
 }
 
 /**
  * Compress multiple image files to at most 100KB each. Returns array of base64 data URLs.
+ * Processes sequentially to avoid memory spikes on mobile.
  */
 export async function compressImagesToMax100KB(files: File[]): Promise<string[]> {
-    const results = await Promise.all(
-        files.map((file) =>
-            compressImageToMax100KB(file).catch((err) => {
-                console.warn("Skip image:", file.name, err);
-                return null;
-            })
-        )
+  const results: string[] = [];
+
+  for (const file of files) {
+    const timeoutMs = isHeicLike(file) ? HEIC_COMPRESS_TIMEOUT_MS : COMPRESS_TIMEOUT_MS;
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Image "${file.name}" took too long to process. Please try a smaller file.`)),
+        timeoutMs
+      )
     );
-    return results.filter((r): r is string => r != null);
+
+    // Race compression against the timeout. On failure fall back to raw data URL for reasonably
+    // sized files, so a single bad image doesn't block the whole upload.
+    let result: string;
+    try {
+      result = await Promise.race([compressImageToMax100KB(file), timeout]);
+    } catch (compressErr) {
+      // Compression failed or timed out. Try raw data URL if the file is small enough.
+      if (file.size > MAX_FALLBACK_DATAURL_BYTES) {
+        throw compressErr instanceof Error
+          ? compressErr
+          : new Error(`Image "${file.name}" could not be processed. Please use a JPG/PNG under 100KB.`);
+      }
+      try {
+        result = await fileToDataUrl(file);
+      } catch {
+        throw new Error(`Image "${file.name}" could not be read. Please try a different photo.`);
+      }
+    }
+
+    results.push(result);
+  }
+
+  return results;
 }

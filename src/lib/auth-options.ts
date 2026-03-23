@@ -30,7 +30,10 @@ export const authOptions: NextAuthOptions = {
                 // Authenticate purely via Prisma + bcrypt
                 const user = await prisma.user.findUnique({
                     where: { email },
-                    include: { role: { include: { permissions: { include: { permission: true } } } } },
+                    include: {
+                        role: { include: { permissions: { include: { permission: true } } } },
+                        branches: { select: { branchId: true } },
+                    },
                 });
 
                 if (!user || !user.active) {
@@ -43,6 +46,9 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 const usedDefaultPassword = password === "admin123";
+                const branchIds =
+                    (user.branches ?? []).map((ub) => ub.branchId).filter(Boolean) ||
+                    [];
                 return {
                     id: user.id,
                     email: user.email,
@@ -50,6 +56,7 @@ export const authOptions: NextAuthOptions = {
                     role: user.role.name,
                     permissions: user.role.permissions.map((rp) => rp.permission.key),
                     branchId: user.branchId,
+                    branchIds: branchIds.length > 0 ? branchIds : (user.branchId ? [user.branchId] : []),
                     mustChangePassword: usedDefaultPassword,
                 };
             },
@@ -59,9 +66,11 @@ export const authOptions: NextAuthOptions = {
         async jwt({ token, user }: { token: any, user: any }) {
             if (user) {
                 token.id = user.id;
+                token.email = user.email;
                 token.role = user.role;
                 token.permissions = user.permissions;
                 token.branchId = user.branchId;
+                token.branchIds = user.branchIds;
                 token.mustChangePassword = user.mustChangePassword;
             }
             return token;
@@ -69,9 +78,11 @@ export const authOptions: NextAuthOptions = {
         async session({ session, token }: { session: any, token: any }) {
             if (token?.id) {
                 session.user.id = token.id;
+                session.user.email = token.email;
                 session.user.role = token.role;
                 session.user.permissions = token.permissions;
                 session.user.branchId = token.branchId;
+                session.user.branchIds = token.branchIds;
                 session.user.mustChangePassword = token.mustChangePassword;
             }
             return session;

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Lock, Loader2, CheckCircle } from "lucide-react";
 
 export default function SetPasswordPage() {
-    const { status } = useSession();
+    const { status, data: session } = useSession();
     const router = useRouter();
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -58,8 +58,27 @@ export default function SetPasswordPage() {
                 return;
             }
 
-            await signOut({ redirect: false });
-            router.push("/login?passwordChanged=1");
+            const email =
+                (session?.user && "email" in session.user ? (session.user as { email?: string }).email : undefined) ??
+                undefined;
+
+            if (!email) {
+                router.replace("/login?passwordChanged=1");
+                return;
+            }
+
+            const result = await signIn("credentials", {
+                email,
+                password: newPassword,
+                redirect: false,
+            });
+
+            if (result?.error) {
+                router.replace("/login?passwordChanged=1");
+                return;
+            }
+
+            window.location.href = "/bodyshop";
         } catch {
             setError("Something went wrong");
         } finally {

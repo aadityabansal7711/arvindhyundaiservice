@@ -36,6 +36,8 @@ model Branch {
   name          String
   city          String
   users         User[]
+  userBranches  UserBranch[]
+  dropdownOptions DropdownOption[]
   repairOrders  RepairOrder[]
 }
 
@@ -50,6 +52,7 @@ model User {
   role             Role      @relation(fields: [roleId], references: [id])
   branchId         String?
   branch           Branch?   @relation(fields: [branchId], references: [id])
+  branches         UserBranch[]
   active           Boolean   @default(true)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -63,6 +66,16 @@ model User {
   paintedROs    RepairOrder[] @relation("Painter")
 
   @@index([active])
+}
+
+model UserBranch {
+  userId   String
+  branchId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@index([branchId])
 }
 
 model Customer {
@@ -210,7 +223,11 @@ model DropdownOption {
   groupKey  String   // e.g. "insurance_company", "ro_status"
   label     String   // display text in dropdown
   value     String?  // stored value (if empty, use label)
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
   sortOrder Int      @default(0)
 
   @@index([groupKey])
+  @@index([branchId])
+  @@index([groupKey, branchId])
 }

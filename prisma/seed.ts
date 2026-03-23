@@ -18,7 +18,9 @@ async function main() {
         'ndc.view', 'ndc.edit',
         'users.manage', 'roles.manage',
         'import.manage',
-        'dashboard.view'
+        'dashboard.view',
+        'branches.view_all',
+        'branches.view_multi'
     ];
 
     const permissions = [];
@@ -34,7 +36,7 @@ async function main() {
     // 2. Create Roles
     const rolesData = [
         { name: 'Owner/Admin', permissions: permissionKeys },
-        { name: 'Service Manager', permissions: ['ro.view', 'ro.edit', 'billing.view', 'parts.view', 'ndc.view', 'dashboard.view'] },
+        { name: 'Service Manager', permissions: ['ro.view', 'ro.edit', 'billing.view', 'parts.view', 'ndc.view', 'dashboard.view', 'branches.view_multi'] },
         { name: 'Bodyshop Advisor', permissions: ['ro.view', 'ro.create', 'ro.edit', 'parts.view', 'ndc.view', 'dashboard.view'] },
         { name: 'Parts Manager/Store', permissions: ['parts.view', 'parts.edit', 'ro.view'] },
         { name: 'Accounts/Cashier', permissions: ['billing.view', 'billing.edit', 'ro.view'] },

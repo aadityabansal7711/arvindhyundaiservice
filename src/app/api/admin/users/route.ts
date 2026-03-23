@@ -27,6 +27,7 @@ export async function GET(_req: NextRequest) {
                 branchId: true,
                 role: { select: { id: true, name: true } },
                 branch: { select: { id: true, name: true } },
+                branches: { select: { branchId: true } },
             },
             orderBy: { createdAt: "desc" },
         });
@@ -68,6 +69,17 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "At least one branch is required" }, { status: 400 });
         }
 
+        const assignedBranchIds = Array.from(
+            new Set(
+                (Array.isArray(branchIds) && branchIds.length > 0
+                    ? branchIds
+                    : [effectiveBranchId]
+                )
+                    .map((b: any) => String(b).trim())
+                    .filter(Boolean)
+            )
+        );
+
         const existing = await prisma.user.findUnique({
             where: { email: email.trim().toLowerCase() },
         });
@@ -90,6 +102,9 @@ export async function POST(req: NextRequest) {
                 branchId: effectiveBranchId,
                 passwordHash,
                 active: true,
+                branches: {
+                    create: assignedBranchIds.map((bid) => ({ branchId: bid })),
+                },
             },
             include: {
                 role: { select: { id: true, name: true } },

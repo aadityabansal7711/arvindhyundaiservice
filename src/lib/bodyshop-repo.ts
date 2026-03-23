@@ -8,7 +8,9 @@ const TABLE_NAME = "bodyshop_jobs";
 type ListParams = {
   search?: string;
   statusSection?: StatusSection | "All";
+  branchIds?: string[];
   limit?: number;
+  select?: string;
 };
 
 let seedCheckPromise: Promise<void> | null = null;
@@ -67,17 +69,21 @@ export function addMeta(job: BodyshopJob): BodyshopJobWithMeta {
 export async function listBodyshopJobs(
   params: ListParams = {}
 ): Promise<BodyshopJobWithMeta[]> {
-  const { search, statusSection, limit = 200 } = params;
+  const { search, statusSection, branchIds, limit = 200, select } = params;
 
   // Try Supabase first.
   let query = supabaseAdmin
     .from(TABLE_NAME)
-    .select("*")
+    .select(select && select.trim().length > 0 ? select : "*")
     .order("ro_date", { ascending: false })
     .limit(limit);
 
   if (statusSection && statusSection !== "All") {
     query = query.eq("status_section", statusSection);
+  }
+
+  if (branchIds && branchIds.length > 0) {
+    query = query.in("branch_id", branchIds);
   }
 
   if (search && search.trim()) {
@@ -102,6 +108,9 @@ export async function listBodyshopJobs(
       if (statusSection && statusSection !== "All" && job.status_section !== statusSection) {
         return false;
       }
+      if (branchIds && branchIds.length > 0 && job.branch_id && !branchIds.includes(job.branch_id)) {
+        return false;
+      }
       if (!search || !search.trim()) return true;
       const term = search.trim().toLowerCase();
       return (
@@ -115,6 +124,6 @@ export async function listBodyshopJobs(
     return filtered.map(addMeta);
   }
 
-  return (data ?? []).map((row) => addMeta(row as BodyshopJob));
+  return (data ?? []).map((row) => addMeta(row as unknown as BodyshopJob));
 }
 

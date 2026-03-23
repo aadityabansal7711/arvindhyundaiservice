@@ -25,15 +25,41 @@ export async function PATCH(
 
     try {
         const body = await req.json();
-        const { name, phone, roleId, branchId, active } = body;
+        const { name, phone, roleId, branchId, branchIds, active } = body;
 
         const data: Record<string, unknown> = {};
         if (typeof name === "string") data.name = name.trim();
         if (phone !== undefined) data.phone = phone === "" || phone == null ? null : String(phone);
         if (typeof roleId === "string") data.roleId = roleId;
-        if (branchId === "" || branchId == null) data.branchId = null;
-        else if (typeof branchId === "string") data.branchId = branchId;
+        const branchIdsArr = Array.isArray(branchIds)
+            ? Array.from(new Set(branchIds.map((b: any) => String(b).trim()).filter(Boolean)))
+            : [];
+        const shouldUpdateBranches = Array.isArray(branchIds);
+        const shouldUpdateBranchId = !shouldUpdateBranches && branchId !== undefined;
+
         if (typeof active === "boolean") data.active = active;
+
+        // Keep branch assignments in sync.
+        if (shouldUpdateBranches) {
+            await prisma.userBranch.deleteMany({ where: { userId: id } });
+            if (branchIdsArr.length > 0) {
+                await prisma.userBranch.createMany({
+                    data: branchIdsArr.map((bid) => ({ userId: id, branchId: bid })),
+                    skipDuplicates: true,
+                });
+                data.branchId = branchIdsArr[0];
+            } else {
+                data.branchId = null;
+            }
+        } else if (shouldUpdateBranchId) {
+            const nextBranchId =
+                typeof branchId === "string" && branchId.trim().length > 0 ? branchId.trim() : null;
+            data.branchId = nextBranchId;
+            await prisma.userBranch.deleteMany({ where: { userId: id } });
+            if (nextBranchId) {
+                await prisma.userBranch.create({ data: { userId: id, branchId: nextBranchId } });
+            }
+        }
 
         const user = await prisma.user.update({
             where: { id },

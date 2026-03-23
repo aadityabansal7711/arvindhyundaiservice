@@ -8,6 +8,21 @@ import supabaseAdmin from "@/lib/supabase-admin";
 
 const HIDDEN_TABLE = "bodyshop_job_hidden";
 
+type CacheEntry<T> = { value: T; expiresAt: number };
+const cache = new Map<string, CacheEntry<unknown>>();
+function cacheGet<T>(key: string): T | null {
+  const hit = cache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    cache.delete(key);
+    return null;
+  }
+  return hit.value as T;
+}
+function cacheSet<T>(key: string, value: T, ttlMs: number) {
+  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
 const STATUS_MAP: Record<string, StatusSection> = {
   OPEN: "Document Pending",
   DOCUMENT_PENDING: "Document Pending",
@@ -93,6 +108,56 @@ function mapROToBodyshopJob(ro: {
   };
 }
 
+function mapROToBodyshopJobBoard(ro: {
+  roNo: string;
+  branchId: string | null;
+  vehicleInDate: Date;
+  currentStatus: string;
+  serviceAdvisorName: string | null;
+  vehicle: { registrationNo: string; model: string; customer: { name: string; mobile: string } };
+  insuranceClaim: { insuranceCompany: string | null } | null;
+}): BodyshopJob {
+  const status_section = mapCurrentStatusToSection(ro.currentStatus);
+  const now = new Date().toISOString();
+  return {
+    id: ro.roNo,
+    ro_no: ro.roNo,
+    branch_id: ro.branchId ?? null,
+    ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
+    reg_no: ro.vehicle.registrationNo,
+    customer_name: ro.vehicle.customer.name,
+    model: ro.vehicle.model,
+    insurance_company: ro.insuranceClaim?.insuranceCompany ?? null,
+    surveyor: null,
+    service_advisor: ro.serviceAdvisorName ?? null,
+    mobile_no: ro.vehicle.customer.mobile,
+    photos: null,
+    claim_intimation_date: null,
+    claim_no: null,
+    hap_status: null,
+    survey_date: null,
+    approval_date: null,
+    advisor_remark: null,
+    whatsapp_date: null,
+    tentative_labor: null,
+    promised_date: null,
+    general_remark: null,
+    replace_panels: null,
+    dent_panels: null,
+    mrs: null,
+    mrs_date: null,
+    order_no: null,
+    order_date: null,
+    eta_date: null,
+    received_date: null,
+    status_section,
+    billing_status: null,
+    parts_status: null,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 function filterJobs(
   jobs: BodyshopJobWithMeta[],
   search: string | undefined,
@@ -126,13 +191,33 @@ export async function GET(request: NextRequest) {
   const countsOnly = url.searchParams.get("countsOnly") === "1" || url.searchParams.get("countsOnly") === "true";
   const search = countsOnly ? undefined : (url.searchParams.get("search") ?? undefined);
   const status = (url.searchParams.get("statusSection") ?? "All") as StatusSection | "All";
+  const view = (url.searchParams.get("view") ?? "board").toLowerCase();
+  const branchIdParam = (url.searchParams.get("branchId") ?? "").trim();
   const limitRaw = Number(url.searchParams.get("limit") ?? "200");
   const limit = countsOnly ? 2500 : (Number.isNaN(limitRaw) ? 200 : Math.min(Math.max(limitRaw, 1), 400));
   const openOnlyParam = url.searchParams.get("openOnly");
   const openOnly =
     openOnlyParam == null ? true : !(openOnlyParam === "0" || openOnlyParam === "false");
 
+  const user = session.user as any;
+  const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
+  const canViewAllBranches = permissions.includes("branches.view_all") || permissions.includes("users.manage");
+  const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
+  const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
+  const allowedBranchIds =
+    canViewAllBranches ? undefined : (assignedBranchIds.length > 0 ? assignedBranchIds : (primaryBranchId ? [primaryBranchId] : []));
+  const effectiveBranchIds =
+    canViewAllBranches
+      ? undefined
+      : branchIdParam && allowedBranchIds?.includes(branchIdParam)
+        ? [branchIdParam]
+        : allowedBranchIds;
+
   if (countsOnly) {
+    const cacheKey = `countsOnly:openOnly=${openOnly ? 1 : 0};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
+    const cached = cacheGet<{ all: number; stages: Record<string, number> }>(cacheKey);
+    if (cached) return NextResponse.json(cached);
+
     const stages: Record<string, number> = {};
     for (const s of [
       "Document Pending", "Survey Pending", "Approval Pending", "Approval Hold", "Approval Received",
@@ -157,10 +242,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Load only the columns needed for counts.
-    const { data: sbRows } = await supabaseAdmin
+    let sbQuery = supabaseAdmin
       .from("bodyshop_jobs")
       .select("ro_no,status_section")
       .limit(6000);
+    if (effectiveBranchIds && effectiveBranchIds.length > 0) {
+      sbQuery = sbQuery.in("branch_id", effectiveBranchIds);
+    }
+    const { data: sbRows } = await sbQuery;
 
     const byRo = new Map<string, StatusSection>();
     for (const row of sbRows ?? []) {
@@ -174,6 +263,7 @@ export async function GET(request: NextRequest) {
     const openROs = await prisma.repairOrder.findMany({
       where: {
         ...(openOnly ? { vehicleOutDate: null } : {}),
+        ...(effectiveBranchIds && effectiveBranchIds.length > 0 ? { branchId: { in: effectiveBranchIds } } : {}),
       },
       select: {
         roNo: true,
@@ -204,15 +294,22 @@ export async function GET(request: NextRequest) {
       ? Array.from(byRo.values()).filter((s) => s !== "Delivered").length
       : byRo.size;
 
-    return NextResponse.json({ all, stages });
+    const payload = { all, stages };
+    cacheSet(cacheKey, payload, 5000);
+    return NextResponse.json(payload);
   }
 
   await ensureSeededOnce();
+
+  const boardSelect =
+    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,photos,status_section,promised_date,created_at,updated_at";
 
   const supabaseJobs = await listBodyshopJobs({
     limit: Math.min(limit * 2, countsOnly ? 5000 : 800),
     statusSection: countsOnly ? "All" : status,
     search,
+    branchIds: effectiveBranchIds,
+    select: view === "board" ? boardSelect : undefined,
   });
 
   // Deleted/tombstoned IDs so refresh doesn't re-add them from Prisma.
@@ -267,38 +364,92 @@ export async function GET(request: NextRequest) {
         }
       : undefined;
 
-  const openROs = await prisma.repairOrder.findMany({
-    where: {
-      ...(openOnly ? { vehicleOutDate: null } : {}),
-      ...(whereSearch ?? {}),
-    },
-    select: {
-      roNo: true,
-      branchId: true,
-      vehicleInDate: true,
-      committedDeliveryDate: true,
-      currentStatus: true,
-      serviceAdvisorName: true,
-      panelsNewReplace: true,
-      panelsDent: true,
-      vehicle: { select: { registrationNo: true, model: true, customer: { select: { name: true, mobile: true } } } },
-      advisor: { select: { name: true } },
-      insuranceClaim: { select: { insuranceCompany: true, claimNo: true, claimIntimationDate: true, hapFlag: true } },
-      survey: { select: { surveyorName: true, surveyDate: true, approvalDate: true } },
-      billing: { select: { actualLabour: true, billAmount: true } },
-    },
-    orderBy: { vehicleInDate: "desc" },
-    take: term ? Math.min(limit * 3, 600) : 500,
-  });
+  const cacheKey = `list:view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
+  const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
+  if (cached) return NextResponse.json(cached);
+
+  const baseWhere = {
+    ...(openOnly ? { vehicleOutDate: null } : {}),
+    ...(whereSearch ?? {}),
+    ...(effectiveBranchIds && effectiveBranchIds.length > 0 ? { branchId: { in: effectiveBranchIds } } : {}),
+  };
+  const take = term ? Math.min(limit * 3, 600) : 500;
+  const orderBy = { vehicleInDate: "desc" as const };
 
   const supabaseByRo = new Map(supabaseJobs.map((j) => [j.ro_no, j]));
   const merged: BodyshopJobWithMeta[] = [...supabaseJobs];
 
-  for (const ro of openROs) {
-    if (hiddenIds.has(ro.roNo)) continue;
-    if (supabaseByRo.has(ro.roNo)) continue;
-    const job = mapROToBodyshopJob(ro);
-    merged.push(addMeta(job));
+  if (view === "board") {
+    const openROsBoard = await prisma.repairOrder.findMany({
+      where: baseWhere,
+      select: {
+        roNo: true,
+        branchId: true,
+        vehicleInDate: true,
+        currentStatus: true,
+        serviceAdvisorName: true,
+        vehicle: {
+          select: {
+            registrationNo: true,
+            model: true,
+            customer: { select: { name: true, mobile: true } },
+          },
+        },
+        insuranceClaim: { select: { insuranceCompany: true } },
+      },
+      orderBy,
+      take,
+    });
+
+    for (const ro of openROsBoard) {
+      if (hiddenIds.has(ro.roNo)) continue;
+      if (supabaseByRo.has(ro.roNo)) continue;
+      const job = mapROToBodyshopJobBoard(ro);
+      merged.push(addMeta(job));
+    }
+  } else {
+    const openROsFull = await prisma.repairOrder.findMany({
+      where: baseWhere,
+      select: {
+        roNo: true,
+        branchId: true,
+        vehicleInDate: true,
+        committedDeliveryDate: true,
+        currentStatus: true,
+        serviceAdvisorName: true,
+        panelsNewReplace: true,
+        panelsDent: true,
+        vehicle: {
+          select: {
+            registrationNo: true,
+            model: true,
+            customer: { select: { name: true, mobile: true } },
+          },
+        },
+        advisor: { select: { name: true } },
+        insuranceClaim: {
+          select: {
+            insuranceCompany: true,
+            claimNo: true,
+            claimIntimationDate: true,
+            hapFlag: true,
+          },
+        },
+        survey: {
+          select: { surveyorName: true, surveyDate: true, approvalDate: true },
+        },
+        billing: { select: { actualLabour: true, billAmount: true } },
+      },
+      orderBy,
+      take,
+    });
+
+    for (const ro of openROsFull) {
+      if (hiddenIds.has(ro.roNo)) continue;
+      if (supabaseByRo.has(ro.roNo)) continue;
+      const job = mapROToBodyshopJob(ro);
+      merged.push(addMeta(job));
+    }
   }
 
   merged.sort((a, b) => {
@@ -311,6 +462,7 @@ export async function GET(request: NextRequest) {
     ? merged.filter((j) => j.status_section !== "Delivered")
     : merged;
   const filtered = filterJobs(openFiltered, search, status, limit);
+  cacheSet(cacheKey, filtered, term ? 2000 : 5000);
   return NextResponse.json(filtered);
 }
 

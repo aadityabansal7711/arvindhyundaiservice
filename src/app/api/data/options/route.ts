@@ -18,6 +18,60 @@ export async function GET(req: NextRequest) {
             if (!permissions.includes("ro.view") && !permissions.includes("users.manage")) {
                 return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
+
+            // Service advisors are branch-linked dropdown options.
+            if (group === "service_advisor") {
+                const user = session.user as any;
+                const canManageUsers = permissions.includes("users.manage");
+                const allowedBranchIds: string[] = Array.isArray(user?.branchIds)
+                    ? user.branchIds.filter(Boolean)
+                    : [];
+                const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
+                const allowed =
+                    allowedBranchIds.length > 0
+                        ? Array.from(new Set(allowedBranchIds))
+                        : primaryBranchId
+                          ? [primaryBranchId]
+                          : [];
+
+                const requestedBranchId =
+                    req.nextUrl.searchParams.get("branchId")?.trim() || undefined;
+                // Non-admins: only branches the user is allowed to use; optional ?branchId= must be in that set.
+                const effectiveBranchIds =
+                    requestedBranchId != null
+                        ? allowed.includes(requestedBranchId)
+                            ? [requestedBranchId]
+                            : []
+                        : allowed;
+
+                // For non-admin users, if no allowed branches remain, return no advisors.
+                if (!canManageUsers && effectiveBranchIds.length === 0) {
+                    return NextResponse.json([]);
+                }
+
+                // Admins (users.manage): filter by ?branchId= when provided so the RO form matches the selected branch;
+                // with no branchId, return all advisor options (e.g. full-page RO form before branch is chosen).
+                const advisors = await prisma.dropdownOption.findMany({
+                    where: {
+                        groupKey: "service_advisor",
+                        ...(canManageUsers
+                            ? requestedBranchId
+                                ? { branchId: requestedBranchId }
+                                : {}
+                            : { branchId: { in: effectiveBranchIds } }),
+                    },
+                    orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
+                });
+
+                return NextResponse.json(
+                    advisors.map((a) => ({
+                        id: a.id,
+                        label: a.label,
+                        value: a.value ?? a.label,
+                    }))
+                );
+            }
+
             const options = await prisma.dropdownOption.findMany({
                 where: { groupKey: group },
                 orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -48,18 +102,22 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const { groupKey, label, value, sortOrder } = body;
+        const { groupKey, label, value, sortOrder, branchId } = body;
         if (!groupKey || !label) {
             return NextResponse.json(
                 { error: "groupKey and label are required" },
                 { status: 400 }
             );
         }
+        if (String(groupKey).trim() === "service_advisor" && !String(branchId ?? "").trim()) {
+            return NextResponse.json({ error: "branchId is required for service advisors" }, { status: 400 });
+        }
         const option = await prisma.dropdownOption.create({
             data: {
                 groupKey: String(groupKey).trim(),
                 label: String(label).trim(),
                 value: value != null && value !== "" ? String(value).trim() : null,
+                branchId: branchId != null && String(branchId).trim() ? String(branchId).trim() : null,
                 sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
             },
         });

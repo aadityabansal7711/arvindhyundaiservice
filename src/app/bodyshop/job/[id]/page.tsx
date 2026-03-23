@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { format } from "date-fns";
+import { useSession } from "next-auth/react";
 import { Calendar, FileText, Save } from "lucide-react";
 
 import DashboardLayout from "@/components/layout/dashboard-layout";
@@ -16,10 +17,16 @@ interface StageHistory {
   to_status: string;
   changed_at: string;
   remark: string | null;
+  gm_remark: string | null;
 }
 
 export default function BodyshopJobDetailPage() {
   const params = useParams<{ id: string }>();
+  const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
+  const { data: session } = useSession();
+  const isGm =
+    ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
+    GM_EMAIL;
   const [job, setJob] = useState<BodyshopJobWithMeta | null>(null);
   const [stages, setStages] = useState<StageHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -358,6 +365,11 @@ export default function BodyshopJobDetailPage() {
                       {s.remark && (
                         <span className="text-[11px] text-slate-500">
                           {s.remark}
+                        </span>
+                      )}
+                      {s.gm_remark && isGm && (
+                        <span className="text-[11px] text-indigo-600 font-semibold">
+                          GM Remark: {s.gm_remark}
                         </span>
                       )}
                     </li>

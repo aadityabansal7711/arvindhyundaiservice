@@ -45,9 +45,6 @@ export default function EditROPage() {
     apiGet<DropdownOption[]>("/api/data/options?group=model")
       .then(setModelOptions)
       .catch(() => setModelOptions([]));
-    apiGet<DropdownOption[]>("/api/data/options?group=service_advisor")
-      .then(setServiceAdvisorOptions)
-      .catch(() => setServiceAdvisorOptions([]));
     apiGet<Branch[]>("/api/data/branches")
       .then(setBranches)
       .catch(() => setBranches([]));
@@ -92,6 +89,32 @@ export default function EditROPage() {
       fetchRO();
     }
   }, [id]);
+
+  // Load service advisors; when a branch is selected, request branch-specific options.
+  useEffect(() => {
+    const branch = branchId.trim();
+    const url = branch
+      ? `/api/data/options?group=service_advisor&branchId=${encodeURIComponent(
+          branch
+        )}`
+      : "/api/data/options?group=service_advisor";
+
+    void apiGet<DropdownOption[]>(
+      url
+    )
+      .then((opts) => {
+        setServiceAdvisorOptions(opts);
+        // Ensure the current selection still belongs to this branch.
+        setServiceAdvisorName((prev) => {
+          if (!prev.trim()) return prev;
+          return opts.some((o) => o.value === prev) ? prev : "";
+        });
+      })
+      .catch(() => {
+        setServiceAdvisorOptions([]);
+        setServiceAdvisorName("");
+      });
+  }, [branchId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -363,33 +386,19 @@ export default function EditROPage() {
                     Service Advisor{" "}
                     <span className="text-rose-500">*</span>
                   </label>
-                  {serviceAdvisorOptions.length > 0 ? (
-                    <select
-                      value={serviceAdvisorName}
-                      onChange={(e) =>
-                        setServiceAdvisorName(e.target.value)
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
-                      required
-                    >
-                      <option value="">Select service advisor</option>
-                      {serviceAdvisorOptions.map((opt) => (
-                        <option key={opt.id} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      value={serviceAdvisorName}
-                      onChange={(e) =>
-                        setServiceAdvisorName(e.target.value)
-                      }
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
-                      required
-                    />
-                  )}
+                  <select
+                    value={serviceAdvisorName}
+                    onChange={(e) => setServiceAdvisorName(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
+                    required
+                  >
+                    <option value="">Select service advisor</option>
+                    {serviceAdvisorOptions.map((opt) => (
+                      <option key={opt.id} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Photos */}

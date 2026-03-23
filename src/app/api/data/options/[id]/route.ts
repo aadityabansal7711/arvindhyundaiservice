@@ -25,10 +25,13 @@ export async function PATCH(
 
     try {
         const body = await req.json();
-        const data: { label?: string; value?: string | null; sortOrder?: number } = {};
+        const data: { label?: string; value?: string | null; sortOrder?: number; branchId?: string | null } = {};
         if (typeof body.label === "string") data.label = body.label.trim();
         if (body.value !== undefined) data.value = body.value === "" ? null : String(body.value).trim();
         if (typeof body.sortOrder === "number") data.sortOrder = body.sortOrder;
+        if (body.branchId !== undefined) {
+            data.branchId = body.branchId && String(body.branchId).trim() ? String(body.branchId).trim() : null;
+        }
 
         const option = await prisma.dropdownOption.update({
             where: { id },

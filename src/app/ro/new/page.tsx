@@ -42,7 +42,6 @@ export default function NewROPage() {
     useEffect(() => {
         apiGet<DropdownOption[]>("/api/data/options?group=insurance_company").then(setInsuranceOptions).catch(() => setInsuranceOptions([]));
         apiGet<DropdownOption[]>("/api/data/options?group=model").then(setModelOptions).catch(() => setModelOptions([]));
-        apiGet<DropdownOption[]>("/api/data/options?group=service_advisor").then(setServiceAdvisorOptions).catch(() => setServiceAdvisorOptions([]));
         apiGet<Branch[]>("/api/data/branches").then(setBranches).catch(() => setBranches([]));
     }, []);
 
@@ -51,6 +50,29 @@ export default function NewROPage() {
             setBranchId(userBranchId);
         }
     }, [isManager, userBranchId]);
+
+    // Load service advisors; when a branch is selected, request branch-specific options.
+    useEffect(() => {
+        const branch = branchId.trim();
+        const url = branch
+            ? `/api/data/options?group=service_advisor&branchId=${encodeURIComponent(branch)}`
+            : "/api/data/options?group=service_advisor";
+
+        void apiGet<DropdownOption[]>(
+            url
+        )
+            .then((opts) => {
+                setServiceAdvisorOptions(opts);
+                setServiceAdvisorName((prev) => {
+                    if (!prev.trim()) return prev;
+                    return opts.some((o) => o.value === prev) ? prev : "";
+                });
+            })
+            .catch(() => {
+                setServiceAdvisorOptions([]);
+                setServiceAdvisorName("");
+            });
+    }, [branchId]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -330,35 +352,24 @@ export default function NewROPage() {
                             )}
                         </div>
 
-                        {/* Service Advisor (configure names in Data → Dropdown options) */}
+                        {/* Service Advisor (filtered by RO branch and user's assigned branch) */}
                         <div>
                             <label className="block text-xs font-bold text-black uppercase tracking-widest mb-2">
                                 Service Advisor <span className="text-rose-500">*</span>
                             </label>
-                            {serviceAdvisorOptions.length > 0 ? (
-                                <select
-                                    value={serviceAdvisorName}
-                                    onChange={(e) => setServiceAdvisorName(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
-                                    required
-                                >
-                                    <option value="">Select service advisor</option>
-                                    {serviceAdvisorOptions.map((opt) => (
-                                        <option key={opt.id} value={opt.value}>
-                                            {opt.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <input
-                                    type="text"
-                                    value={serviceAdvisorName}
-                                    onChange={(e) => setServiceAdvisorName(e.target.value)}
-                                    placeholder=""
-                                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
-                                    required
-                                />
-                            )}
+                            <select
+                                value={serviceAdvisorName}
+                                onChange={(e) => setServiceAdvisorName(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none"
+                                required
+                            >
+                                <option value="">Select service advisor</option>
+                                {serviceAdvisorOptions.map((opt) => (
+                                    <option key={opt.id} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Photos (required) */}
@@ -399,7 +410,7 @@ export default function NewROPage() {
                                 <div className="mt-3 flex flex-wrap gap-2">
                                     {photoFiles.map((file, i) => (
                                         <div
-                                            key={`${file.name}-${i}`}
+                                            key={`${file.name}-${file.size}-${file.lastModified}-${i}`}
                                             className="relative group flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg text-sm text-slate-700"
                                         >
                                             <span className="truncate max-w-[140px]">{file.name}</span>
@@ -431,10 +442,6 @@ export default function NewROPage() {
                         <button
                             type="submit"
                             aria-disabled={isSubmitting}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onDoubleClick={(e) => e.preventDefault()}
-                            onMouseUp={() => window.getSelection?.()?.removeAllRanges()}
-                            onSelect={(e) => e.preventDefault()}
                             className={cn(
                                 "inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all select-none",
                                 "bg-blue-600 text-white shadow-blue-600/20 hover:bg-blue-700",

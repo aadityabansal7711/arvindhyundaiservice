@@ -22,7 +22,6 @@ type DropdownOption = { id: string; groupKey: string; label: string };
 
 const OPTION_GROUPS: { key: string; label: string }[] = [
     { key: "insurance_company", label: "Insurance Company Name" },
-    { key: "service_advisor", label: "Service Advisor" },
     { key: "model", label: "Model" },
 ];
 
@@ -369,6 +368,10 @@ export default function DataPage() {
 
                                 {activeTab === "options" && (
                                     <div className="space-y-8">
+                                        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                                            Service Advisors are managed in User Management.
+                                            Assign role <strong>Bodyshop Advisor</strong> and branch access there.
+                                        </div>
                                         {OPTION_GROUPS.map((group) => {
                                             const items = optionsByGroup(group.key);
                                             return (

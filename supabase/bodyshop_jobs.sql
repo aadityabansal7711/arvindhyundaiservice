@@ -67,8 +67,12 @@ create table if not exists public.bodyshop_job_stages (
   to_status text not null,
   changed_at timestamptz not null default now(),
   changed_by text, -- optional user id or name
-  remark text
+  remark text,
+  gm_remark text
 );
+
+-- Add new columns to existing installations safely.
+alter table public.bodyshop_job_stages add column if not exists gm_remark text;
 
 create index if not exists idx_bodyshop_job_stages_job_id
   on public.bodyshop_job_stages (job_id, changed_at desc);

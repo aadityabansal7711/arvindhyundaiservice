@@ -9,6 +9,11 @@ import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
 const TABLE_NAME = "bodyshop_jobs";
 const STAGE_TABLE = "bodyshop_job_stages";
 const HIDDEN_TABLE = "bodyshop_job_hidden";
+const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
+
+function isGmUser(email: string | null | undefined) {
+  return (email ?? "").trim().toLowerCase() === GM_EMAIL;
+}
 
 const STATUS_MAP: Record<string, StatusSection> = {
   OPEN: "Document Pending",
@@ -188,6 +193,48 @@ export async function GET(
   return NextResponse.json(addMeta(mapROToBodyshopJob(ro)));
 }
 
+async function loadPatchBaseRow(
+  id: string,
+  existing: Record<string, unknown> | null
+): Promise<Record<string, unknown> | null> {
+  if (existing) {
+    return { ...existing };
+  }
+  const ro = await prisma.repairOrder.findUnique({
+    where: { roNo: id },
+    select: {
+      roNo: true,
+      branchId: true,
+      vehicleInDate: true,
+      committedDeliveryDate: true,
+      currentStatus: true,
+      serviceAdvisorName: true,
+      panelsNewReplace: true,
+      panelsDent: true,
+      vehicle: {
+        select: {
+          registrationNo: true,
+          model: true,
+          customer: { select: { name: true, mobile: true } },
+        },
+      },
+      advisor: { select: { name: true } },
+      insuranceClaim: {
+        select: {
+          insuranceCompany: true,
+          claimNo: true,
+          claimIntimationDate: true,
+          hapFlag: true,
+        },
+      },
+      survey: { select: { surveyorName: true, surveyDate: true, approvalDate: true } },
+      billing: { select: { actualLabour: true, billAmount: true } },
+    },
+  });
+  if (!ro) return null;
+  return mapROToBodyshopJob(ro) as unknown as Record<string, unknown>;
+}
+
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -200,9 +247,35 @@ export async function PATCH(
   const { id } = await context.params;
   const body = await request.json();
 
+  const userEmail = (session.user as any)?.email as string | undefined;
+  const isGm = isGmUser(userEmail);
+
   const toStatus = body.status_section as StatusSection | undefined;
-  const remark = (body.remark as string | undefined) ?? null;
+  // `remark` is the legacy column. Treat it as "inputer remark" for backward compatibility.
+  const inputerRemark =
+    (body.inputer_remark as string | undefined) ??
+    (body.remark as string | undefined) ??
+    null;
+  const gmRemark = isGm ? ((body.gm_remark as string | undefined) ?? null) : null;
   const changedBy = (body.changed_by as string | undefined) ?? null;
+  const photosAppend = Array.isArray(body.photos_append)
+    ? (body.photos_append as unknown[]).filter(
+        (p): p is string => typeof p === "string" && p.length > 0
+      )
+    : [];
+  const movement_at_raw =
+    typeof body.movement_at === "string" ? body.movement_at.trim() : "";
+  let changed_at: string | null = null;
+  if (movement_at_raw) {
+    const movementDate = new Date(movement_at_raw);
+    if (Number.isNaN(movementDate.getTime())) {
+      return NextResponse.json(
+        { error: "Invalid movement_at. Expected datetime-local value." },
+        { status: 400 }
+      );
+    }
+    changed_at = movementDate.toISOString();
+  }
 
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from(TABLE_NAME)
@@ -217,9 +290,18 @@ export async function PATCH(
     );
   }
 
-  const fromStatus = (existing?.status_section as string | null) ?? null;
-
   const now = new Date().toISOString();
+  const mergedBase = await loadPatchBaseRow(
+    id,
+    existing as Record<string, unknown> | null
+  );
+  if (!mergedBase) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  const merged: Record<string, unknown> = { ...mergedBase };
+  const fromStatus = (merged.status_section as string | null) ?? null;
+
   const allowedFields: (keyof BodyshopJob)[] = [
     "ro_no",
     "branch_id",
@@ -255,24 +337,30 @@ export async function PATCH(
     "parts_status",
   ];
 
-  const patch: Partial<BodyshopJob> = {};
   for (const k of allowedFields) {
     if (Object.prototype.hasOwnProperty.call(body, k)) {
-      (patch as any)[k] = body[k];
+      merged[k] = (body as Record<string, unknown>)[k as string];
     }
   }
+  if (photosAppend.length > 0) {
+    const existingPhotos = Array.isArray(merged.photos)
+      ? (merged.photos as unknown[]).filter(
+          (p): p is string => typeof p === "string" && p.length > 0
+        )
+      : [];
+    merged.photos = [...existingPhotos, ...photosAppend];
+  }
 
-  // Ensure id + timestamps are present for upsert
-  (patch as any).id = id;
-  (patch as any).ro_no = (patch as any).ro_no ?? id;
-  (patch as any).updated_at = now;
+  merged.id = id;
+  merged.ro_no = String(merged.ro_no || id).trim() || id;
+  merged.updated_at = now;
   if (!existing) {
-    (patch as any).created_at = now;
+    merged.created_at = (merged.created_at as string) || now;
   }
 
   const { error: updateError } = await supabaseAdmin
     .from(TABLE_NAME)
-    .upsert(patch as any, { onConflict: "id" });
+    .upsert(merged as unknown as BodyshopJob, { onConflict: "id" });
 
   if (updateError) {
     return NextResponse.json(
@@ -282,13 +370,33 @@ export async function PATCH(
   }
 
   if (toStatus && toStatus !== fromStatus) {
-    const { error: stageError } = await supabaseAdmin.from(STAGE_TABLE).insert({
+    const baseStagePayload: Record<string, unknown> = {
       job_id: id,
       from_status: fromStatus,
       to_status: toStatus,
-      remark,
+      remark: inputerRemark,
       changed_by: changedBy,
-    });
+      ...(changed_at ? { changed_at } : {}),
+    };
+
+    if (gmRemark != null) {
+      baseStagePayload.gm_remark = gmRemark;
+    }
+
+    let { error: stageError } = await supabaseAdmin
+      .from(STAGE_TABLE)
+      .insert(baseStagePayload);
+
+    // Retry without gm_remark for backward compatibility if the column isn't present.
+    if (
+      stageError &&
+      gmRemark != null &&
+      String(stageError.message ?? "").toLowerCase().includes("gm_remark")
+    ) {
+      delete baseStagePayload.gm_remark;
+      const retry = await supabaseAdmin.from(STAGE_TABLE).insert(baseStagePayload);
+      stageError = retry.error;
+    }
 
     if (stageError) {
       // Log but don't fail the main request.

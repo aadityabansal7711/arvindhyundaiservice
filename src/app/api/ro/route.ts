@@ -142,19 +142,34 @@ export async function GET(req: NextRequest) {
         const where: Prisma.RepairOrderWhereInput = {};
 
         const user = session.user as any;
-        const userRole = (user?.role as string | undefined)?.toLowerCase();
+        const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
+        const canViewAllBranches = permissions.includes("branches.view_all") || permissions.includes("users.manage");
+        const canViewMultiBranches = permissions.includes("branches.view_multi");
+        const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
         const userBranchId = user?.branchId as string | undefined;
 
         if (status) {
             where.currentStatus = status;
         }
 
-        const isManager = userRole === "manager";
-        const effectiveBranchId =
-            (isManager && userBranchId) ? userBranchId : branchIdParam || undefined;
+        const allowedBranchIds = canViewAllBranches
+            ? null
+            : (canViewMultiBranches
+                ? (assignedBranchIds.length > 0 ? assignedBranchIds : (userBranchId ? [userBranchId] : []))
+                : (userBranchId ? [userBranchId] : []));
 
-        if (effectiveBranchId) {
-            where.branchId = effectiveBranchId;
+        if (!canViewAllBranches) {
+            const requested = branchIdParam?.trim();
+            if (requested && allowedBranchIds?.includes(requested)) {
+                where.branchId = requested;
+            } else if (allowedBranchIds && allowedBranchIds.length > 0) {
+                where.branchId = { in: allowedBranchIds };
+            } else {
+                // No allowed branches → return empty
+                where.branchId = "__none__";
+            }
+        } else if (branchIdParam?.trim()) {
+            where.branchId = branchIdParam.trim();
         }
 
         if (search.trim()) {

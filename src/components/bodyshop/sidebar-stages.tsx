@@ -23,6 +23,8 @@ export function SidebarStages() {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    let lastFetchAt = 0;
     const fetchCounts = () =>
       apiGet<CountsResponse>("/api/bodyshop-jobs?openOnly=1&countsOnly=1")
         .then((data) => {
@@ -33,7 +35,20 @@ export function SidebarStages() {
         });
 
     // Initial load
-    void fetchCounts();
+    const doFetch = async () => {
+      if (cancelled) return;
+      const now = Date.now();
+      if (inFlight) return;
+      if (now - lastFetchAt < 1200) return;
+      inFlight = true;
+      lastFetchAt = now;
+      try {
+        await fetchCounts();
+      } finally {
+        inFlight = false;
+      }
+    };
+    void doFetch();
 
     // Realtime updates (instant refresh when jobs change)
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -41,8 +56,8 @@ export function SidebarStages() {
       if (cancelled) return;
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
-        void fetchCounts();
-      }, 150);
+        void doFetch();
+      }, 600);
     };
 
     const channel = supabase
@@ -65,7 +80,7 @@ export function SidebarStages() {
     window.addEventListener("bodyshop:counts-refresh", onLocalRefresh);
 
     // Fallback polling in case realtime is not enabled.
-    const poll = setInterval(() => scheduleRefresh(), 15000);
+    const poll = setInterval(() => scheduleRefresh(), 30000);
 
     return () => {
       cancelled = true;
