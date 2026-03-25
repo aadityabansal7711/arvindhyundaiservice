@@ -39,7 +39,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await getServerSession(authOptions);
-    if (!session || !(session.user as any).permissions?.includes("users.manage")) {
+    // Requirement: only this specific admin user should be able to delete ROs.
+    const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
+    const email = (session?.user as any)?.email;
+    const isAllowedAdmin = typeof email === "string" && email.toLowerCase() === allowedRoDeleteEmail;
+    if (!session || !isAllowedAdmin) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 

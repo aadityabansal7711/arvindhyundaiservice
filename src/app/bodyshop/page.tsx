@@ -63,6 +63,10 @@ function BodyshopDashboardPageInner() {
   const isGm =
     ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
     GM_EMAIL;
+  const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
+  const canDeleteRo =
+    ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
+    allowedRoDeleteEmail;
   const [branches, setBranches] = useState<Branch[]>([]);
   const [insuranceOptions, setInsuranceOptions] = useState<DropdownOption[]>([]);
   const [modelOptions, setModelOptions] = useState<DropdownOption[]>([]);
@@ -768,16 +772,18 @@ function BodyshopDashboardPageInner() {
                               >
                                 Edit
                               </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void onDelete(job.id);
-                                }}
-                                className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
-                              >
-                                Delete
-                              </button>
+                              {canDeleteRo && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void onDelete(job.id);
+                                  }}
+                                  className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
+                                >
+                                  Delete
+                                </button>
+                              )}
                               {(() => {
                                 const targets = getMoveTargets(job.status_section);
                                 if (!targets || targets.length === 0) return null;

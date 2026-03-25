@@ -23,13 +23,24 @@ export async function GET(req: NextRequest) {
             if (group === "service_advisor") {
                 const user = session.user as any;
                 const canManageUsers = permissions.includes("users.manage");
-                const allowedBranchIds: string[] = Array.isArray(user?.branchIds)
-                    ? user.branchIds.filter(Boolean)
-                    : [];
-                const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
+                const userId = typeof user?.id === "string" ? user.id : null;
+                const assignedBranches =
+                    userId
+                        ? await prisma.user.findUnique({
+                              where: { id: userId },
+                              select: { branchId: true, branches: { select: { branchId: true } } },
+                          })
+                        : null;
+
+                // Avoid JWT-cached `branchIds` (NextAuth JWT won't auto-refresh on permission/branch changes)
+                const assignedBranchIds: string[] =
+                    assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
+                const primaryBranchId =
+                    typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
+
                 const allowed =
-                    allowedBranchIds.length > 0
-                        ? Array.from(new Set(allowedBranchIds))
+                    assignedBranchIds.length > 0
+                        ? Array.from(new Set(assignedBranchIds))
                         : primaryBranchId
                           ? [primaryBranchId]
                           : [];

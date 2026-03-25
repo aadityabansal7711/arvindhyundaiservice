@@ -12,22 +12,32 @@ export async function GET() {
         const user = session.user as any;
         const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
         const canViewAll = permissions.includes("branches.view_all") || permissions.includes("users.manage");
-        const branchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
-        const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
+
+        // Important: do not rely on JWT-cached `branchIds` because branch assignments may have changed
+        // and NextAuth JWT strategy won't refresh automatically until re-login.
+        const userId = typeof user?.id === "string" ? user.id : null;
+        const assignedBranches = !canViewAll && userId
+            ? await prisma.user.findUnique({
+                  where: { id: userId },
+                  select: { branchId: true, branches: { select: { branchId: true } } },
+              })
+            : null;
+
+        const assignedBranchIds: string[] =
+            assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
+        const primaryBranchId =
+            typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
+
+        const allowedBranchIds = canViewAll
+            ? null
+            : assignedBranchIds.length > 0
+              ? assignedBranchIds
+              : primaryBranchId
+                ? [primaryBranchId]
+                : [];
 
         const branches = await prisma.branch.findMany({
-            where: canViewAll
-                ? undefined
-                : {
-                      id: {
-                          in:
-                              branchIds.length > 0
-                                  ? branchIds
-                                  : primaryBranchId
-                                    ? [primaryBranchId]
-                                    : [],
-                      },
-                  },
+            where: allowedBranchIds === null ? undefined : { id: { in: allowedBranchIds } },
             orderBy: { name: "asc" },
         });
         return NextResponse.json(branches);

@@ -27,6 +27,10 @@ function DeliveredPageInner() {
   const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
   const userPermissions = ((session?.user as any)?.permissions ?? []) as string[];
   const isAdmin = userPermissions.includes("users.manage");
+  const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
+  const canDeleteRo =
+    ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
+    allowedRoDeleteEmail;
   const isGm =
     ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
     GM_EMAIL;
@@ -340,16 +344,18 @@ function DeliveredPageInner() {
                         </div>
                       </td>
                       <td className="px-5 py-3 text-sm">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void onDelete(job.id);
-                          }}
-                          className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
-                        >
-                          Delete
-                        </button>
+                        {canDeleteRo && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void onDelete(job.id);
+                            }}
+                            className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

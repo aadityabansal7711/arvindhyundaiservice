@@ -35,9 +35,7 @@ export default function NewROPage() {
     const [photoFiles, setPhotoFiles] = useState<File[]>([]);
     const photoInputRef = useRef<HTMLInputElement>(null);
 
-    const userRole = (session?.user as any)?.role as string | undefined;
     const userBranchId = (session?.user as any)?.branchId as string | undefined;
-    const isManager = userRole?.toLowerCase() === "manager";
 
     useEffect(() => {
         apiGet<DropdownOption[]>("/api/data/options?group=insurance_company").then(setInsuranceOptions).catch(() => setInsuranceOptions([]));
@@ -46,10 +44,14 @@ export default function NewROPage() {
     }, []);
 
     useEffect(() => {
-        if (isManager && userBranchId) {
-            setBranchId(userBranchId);
+        // Default to user's primary branch (if present), otherwise first available branch.
+        // This keeps create-flow working while still allowing users to select among allowed branches.
+        if (!branchId.trim() && branches.length > 0) {
+            const preferred = userBranchId && branches.some((b) => b.id === userBranchId) ? userBranchId : "";
+            const next = preferred || branches[0]?.id || "";
+            if (next) setBranchId(next);
         }
-    }, [isManager, userBranchId]);
+    }, [branches, userBranchId, branchId]);
 
     // Load service advisors; when a branch is selected, request branch-specific options.
     useEffect(() => {
@@ -199,13 +201,10 @@ export default function NewROPage() {
                                 <select
                                     value={branchId}
                                     onChange={(e) => setBranchId(e.target.value)}
-                                    disabled={isManager}
                                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white appearance-none disabled:opacity-60"
                                     required
                                 >
-                                    {!isManager && <option value="">Select branch</option>}
                                     {branches.map((b) => {
-                                        if (isManager && userBranchId && b.id !== userBranchId) return null;
                                         return (
                                             <option key={b.id} value={b.id}>
                                                 {b.name}

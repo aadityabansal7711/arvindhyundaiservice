@@ -31,7 +31,11 @@ export default function RORegisterPage() {
   const userPermissions = (session?.user as any)?.permissions ?? [];
   const userRole = (session?.user as any)?.role as string | undefined;
   const userBranchId = (session?.user as any)?.branchId as string | undefined;
-  const canAdminRo = userPermissions.includes("users.manage");
+  // Requirement: only this specific admin user should be able to delete ROs.
+  const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
+  const canAdminRo =
+    typeof (session?.user as any)?.email === "string" &&
+    (session?.user as any)?.email.toLowerCase() === allowedRoDeleteEmail;
   const canEditRo = userPermissions.includes("ro.view");
   const isManager = userRole?.toLowerCase() === "manager";
 

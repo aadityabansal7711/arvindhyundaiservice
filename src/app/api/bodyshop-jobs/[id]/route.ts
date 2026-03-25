@@ -454,6 +454,16 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Requirement: only this specific admin user should be able to delete ROs.
+  // This endpoint tombstones + deletes the bodyshop record, which represents an RO in the board UI.
+  const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
+  const email = (session.user as any)?.email;
+  const isAllowedAdmin =
+    typeof email === "string" && email.toLowerCase() === allowedRoDeleteEmail;
+  if (!isAllowedAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await context.params;
 
   // Tombstone first so refresh won't re-add this RO from Prisma open ROs.
