@@ -35,7 +35,7 @@ const STATUS_MAP: Record<string, StatusSection> = {
   "Survey Pending": "Survey Pending",
   "Document Pending": "Document Pending",
   "Approval Pending": "Approval Pending",
-  "Approval Hold": "Approval Hold",
+  "Approval Hold": "Approval Pending",
   "Approval Received": "Approval Received",
   PNA: "PNA",
   Dismantle: "Dismantle",
@@ -49,12 +49,41 @@ const STATUS_MAP: Record<string, StatusSection> = {
   "DO Awaited": "DO Awaited",
   "Customer Awaited": "Customer Awaited",
   "Total Loss / Disputed": "Total Loss / Disputed",
-  "No Claim": "No Claim",
+  "No Claim": "Total Loss / Disputed",
   Delivered: "Delivered",
 };
 
 function mapCurrentStatusToSection(currentStatus: string): StatusSection {
   return STATUS_MAP[currentStatus] ?? "Document Pending";
+}
+
+function normalizeStatusSection(raw: unknown): StatusSection {
+  const s = typeof raw === "string" ? raw : "";
+  if (s === "Approval Hold") return "Approval Pending";
+  if (s === "No Claim") return "Total Loss / Disputed";
+
+  // Keep this list in sync with `STATUS_SECTION_ORDER`.
+  const valid: StatusSection[] = [
+    "Document Pending",
+    "Survey Pending",
+    "Approval Pending",
+    "Approval Received",
+    "PNA",
+    "Dismantle",
+    "Mechanical",
+    "Cutting",
+    "Denting",
+    "Painting",
+    "Fitting",
+    "Ready for Pre-Invoice",
+    "Billed but Not Ready",
+    "DO Awaited",
+    "Customer Awaited",
+    "Total Loss / Disputed",
+    "Delivered",
+  ];
+
+  return valid.includes(s as StatusSection) ? (s as StatusSection) : "Document Pending";
 }
 
 function mapROToBodyshopJob(ro: {
@@ -225,10 +254,10 @@ export async function GET(request: NextRequest) {
 
     const stages: Record<string, number> = {};
     for (const s of [
-      "Document Pending", "Survey Pending", "Approval Pending", "Approval Hold", "Approval Received",
+      "Document Pending", "Survey Pending", "Approval Pending", "Approval Received",
       "PNA", "Dismantle", "Mechanical", "Cutting", "Denting", "Painting", "Fitting",
       "Ready for Pre-Invoice", "Billed but Not Ready", "DO Awaited", "Customer Awaited",
-      "Total Loss / Disputed", "No Claim", "Delivered",
+      "Total Loss / Disputed", "Delivered",
     ] as StatusSection[]) {
       stages[s] = 0;
     }
@@ -259,9 +288,8 @@ export async function GET(request: NextRequest) {
     const byRo = new Map<string, StatusSection>();
     for (const row of sbRows ?? []) {
       const roNo = (row as any)?.ro_no;
-      const status = (row as any)?.status_section as StatusSection | undefined;
       if (typeof roNo === "string" && roNo) {
-        byRo.set(roNo, status ?? "Document Pending");
+        byRo.set(roNo, normalizeStatusSection((row as any)?.status_section));
       }
     }
 
@@ -544,6 +572,14 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // If this RO was previously deleted, it may be tombstoned in `bodyshop_job_hidden`.
+  // Clear it so the detail endpoint doesn't 404 immediately after "re-creating" it.
+  try {
+    await supabaseAdmin.from(HIDDEN_TABLE).delete().eq("job_id", payload.id);
+  } catch {
+    // Ignore if table doesn't exist yet.
   }
 
   return NextResponse.json({ success: true });

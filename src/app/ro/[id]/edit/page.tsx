@@ -412,15 +412,23 @@ export default function EditROPage() {
                     accept="image/*,.heic,.heif,image/heic,image/heif"
                     multiple
                     className="hidden"
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      if (files?.length) {
-                        setPhotoFiles((prev) => [
-                          ...prev,
-                          ...Array.from(files),
-                        ]);
-                        e.target.value = "";
-                      }
+                    onChange={async (e) => {
+                      const inputEl = e.currentTarget;
+                      const rawFiles = inputEl.files;
+                      if (!rawFiles || rawFiles.length === 0) return;
+                      const fileArr = Array.from(rawFiles);
+                      inputEl.value = "";
+                      const detached = await Promise.all(
+                        fileArr.map(async (f) => {
+                          try {
+                            const buf = await f.arrayBuffer();
+                            return new File([buf], f.name, { type: f.type, lastModified: f.lastModified });
+                          } catch {
+                            return f;
+                          }
+                        })
+                      );
+                      setPhotoFiles((prev) => [...prev, ...detached]);
                     }}
                   />
                   <div className="flex flex-wrap gap-3">

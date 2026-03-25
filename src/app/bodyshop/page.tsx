@@ -18,7 +18,6 @@ import type { BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import {
   compressImageToMax100KB,
-  compressImagesToMax100KB,
 } from "@/lib/compress-image";
 
 type DropdownOption = { id: string; label: string; value: string };
@@ -44,6 +43,8 @@ function BodyshopDashboardPageInner() {
   const [isAdding, setIsAdding] = useState(false);
   const [moveJob, setMoveJob] = useState<BodyshopJobWithMeta | null>(null);
   const [moveToStatus, setMoveToStatus] = useState<StatusSection | null>(null);
+  // When current stage branches (ex: `Approval Pending`), store available targets here.
+  const [moveToOptions, setMoveToOptions] = useState<StatusSection[] | null>(null);
   const [moveViewOpen, setMoveViewOpen] = useState(false);
   const [stageViewOpen, setStageViewOpen] = useState(false);
   const [stageViewJobId, setStageViewJobId] = useState<string | null>(null);
@@ -102,6 +103,30 @@ function BodyshopDashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+
+  const appendPhotoWithRetry = async (jobId: string, encodedPhoto: string) => {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await apiPatch(`/api/bodyshop-jobs/${encodeURIComponent(jobId)}`, {
+          photos_append: [encodedPhoto],
+        });
+        return;
+      } catch (err) {
+        lastError =
+          err instanceof Error ? err : new Error("Failed to append photo");
+        if (attempt < 3) {
+          await wait(250 * attempt);
+        }
+      }
+    }
+    throw lastError ?? new Error("Failed to append photo");
+  };
 
   const pad2 = (n: number) => String(n).padStart(2, "0");
   const toLocalDatetimeInputValue = (d: Date) => {
@@ -272,14 +297,15 @@ function BodyshopDashboardPageInner() {
         return;
       }
 
-      const photos = await compressImagesToMax100KB(addPhotoFiles);
-      if (photos.length === 0) {
+      setAddDebug("Processing selected photos...");
+      const firstPhoto = await compressImageToMax100KB(addPhotoFiles[0]);
+      if (!firstPhoto) {
         setAddError(
           "Selected photos could not be processed. Try JPG/PNG or a different HEIC image."
         );
         return;
       }
-      setAddDebug(`Uploading ${photos.length} photo(s)...`);
+      setAddDebug("Creating RO...");
       await apiPost("/api/bodyshop-jobs", {
         id: ro,
         ro_no: ro,
@@ -291,9 +317,21 @@ function BodyshopDashboardPageInner() {
         mobile_no: addForm.mobile_no.trim(),
         insurance_company: addForm.insurance_company.trim(),
         service_advisor: addForm.service_advisor.trim(),
-        photos,
+        photos: [firstPhoto],
         status_section: "Document Pending",
       });
+      if (addPhotoFiles.length > 1) {
+        const rest = addPhotoFiles.slice(1);
+        for (let i = 0; i < rest.length; i += 1) {
+          const file = rest[i];
+          setAddDebug(
+            `Uploading photo ${i + 2}/${addPhotoFiles.length}...`
+          );
+          const encoded = await compressImageToMax100KB(file);
+          await appendPhotoWithRetry(ro, encoded);
+        }
+      }
+      setAddDebug("All photos saved");
       emitCountsRefresh();
       setIsAdding(false);
       setAddDebug(null);
@@ -357,10 +395,15 @@ function BodyshopDashboardPageInner() {
     }
   };
 
-  const getNextStatus = (current: StatusSection): StatusSection | null => {
+  const getMoveTargets = (current: StatusSection): StatusSection[] | null => {
+    // Branching workflow: after `Approval Pending`, user chooses the next terminal outcome.
+    if (current === "Approval Pending") {
+      return ["Approval Received", "Total Loss / Disputed"];
+    }
+
     const idx = STATUS_SECTION_ORDER.indexOf(current);
     if (idx < 0 || idx >= STATUS_SECTION_ORDER.length - 1) return null;
-    return STATUS_SECTION_ORDER[idx + 1];
+    return [STATUS_SECTION_ORDER[idx + 1]];
   };
 
   const openStageView = async (jobId: string) => {
@@ -403,18 +446,20 @@ function BodyshopDashboardPageInner() {
       console.warn("Failed to refresh job before move:", e);
     }
 
-    const nextStatus = getNextStatus(currentJob.status_section);
-    if (!nextStatus) return;
+    const moveTargets = getMoveTargets(currentJob.status_section);
+    if (!moveTargets || moveTargets.length === 0) return;
 
     const now = new Date();
     const movement_at = toLocalDatetimeInputValue(now);
-    const inputerRemark = `Moved to ${nextStatus} on ${format(
+    const defaultMoveToStatus = moveTargets[0];
+    const inputerRemark = `Moved to ${defaultMoveToStatus} on ${format(
       now,
       "yyyy-MM-dd HH:mm"
     )}`;
 
     setMoveJob(currentJob);
-    setMoveToStatus(nextStatus);
+    setMoveToOptions(moveTargets.length > 1 ? moveTargets : null);
+    setMoveToStatus(defaultMoveToStatus);
     setMoveViewOpen(false);
     setMoveError(null);
     setMoveSaving(false);
@@ -463,9 +508,7 @@ function BodyshopDashboardPageInner() {
           const file = movePhotoFiles[i];
           setMoveDebug(`Uploading photo ${i + 1}/${movePhotoFiles.length}...`);
           const encoded = await compressImageToMax100KB(file);
-          await apiPatch(`/api/bodyshop-jobs/${encodeURIComponent(moveJob.id)}`, {
-            photos_append: [encoded],
-          });
+          await appendPhotoWithRetry(moveJob.id, encoded);
           appendedPhotos.push(encoded);
         }
         setMoveDebug("All photos saved");
@@ -506,6 +549,7 @@ function BodyshopDashboardPageInner() {
 
       setMoveJob(null);
       setMoveToStatus(null);
+      setMoveToOptions(null);
       setMovePhotoFiles([]);
       setMoveViewOpen(false);
       setMoveDebug(null);
@@ -734,18 +778,24 @@ function BodyshopDashboardPageInner() {
                               >
                                 Delete
                               </button>
-                              {getNextStatus(job.status_section) && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void onMoveToNextStatus(job);
-                                  }}
-                                  className="text-indigo-600 hover:text-indigo-700 font-semibold text-xs"
-                                >
-                                  {getNextStatus(job.status_section)}
-                                </button>
-                              )}
+                              {(() => {
+                                const targets = getMoveTargets(job.status_section);
+                                if (!targets || targets.length === 0) return null;
+                                const label =
+                                  targets.length === 1 ? targets[0] : "Choose Next";
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void onMoveToNextStatus(job);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-700 font-semibold text-xs"
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })()}
                             </div>
                           </td>
                         </tr>
@@ -821,6 +871,7 @@ function BodyshopDashboardPageInner() {
           onClick={() => {
             setMoveJob(null);
             setMoveToStatus(null);
+            setMoveToOptions(null);
             setMovePhotoFiles([]);
             setMoveDebug(null);
             setMoveViewOpen(false);
@@ -833,18 +884,64 @@ function BodyshopDashboardPageInner() {
             <div className="p-4 sm:p-6 space-y-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-lg font-bold text-slate-900">
-                    Move to {moveToStatus}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    Enter movement date/time and add a remark.
-                  </div>
+                    <div className="text-lg font-bold text-slate-900">
+                      {moveToOptions && moveToOptions.length > 1
+                        ? "After Approval Pending"
+                        : `Move to ${moveToStatus}`}
+                    </div>
+                    <div className="text-sm text-slate-500">
+                      {moveToOptions && moveToOptions.length > 1
+                        ? "Choose the next outcome for this RO."
+                        : "Enter movement date/time and add a remark."}
+                    </div>
+                    {moveToOptions && moveToOptions.length > 1 && (
+                      <div className="mt-3 space-y-2">
+                        <div className="text-xs font-bold text-slate-700 uppercase tracking-widest">
+                          Next status
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {moveToOptions.map((opt) => {
+                            const active = moveToStatus === opt;
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => {
+                                  setMoveToStatus(opt);
+                                  // Keep the time portion, but update the destination.
+                                  setMoveForm((p) => {
+                                    const parts = String(p.inputer_remark ?? "").split(" on ");
+                                    const timePart =
+                                      parts.length > 1 ? parts.slice(1).join(" on ") : "";
+                                    return {
+                                      ...p,
+                                      inputer_remark: timePart
+                                        ? `Moved to ${opt} on ${timePart}`
+                                        : p.inputer_remark,
+                                    };
+                                  });
+                                }}
+                                className={
+                                  "px-3 py-2 rounded-xl text-sm font-semibold transition-colors border " +
+                                  (active
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50")
+                                }
+                              >
+                                {opt}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                 </div>
                 <button
                   type="button"
                   onClick={() => {
                     setMoveJob(null);
                     setMoveToStatus(null);
+                      setMoveToOptions(null);
                     setMovePhotoFiles([]);
                     setMoveDebug(null);
                     setMoveViewOpen(false);
@@ -925,13 +1022,23 @@ function BodyshopDashboardPageInner() {
                   accept="image/*,.heic,.heif,image/heic,image/heif"
                   multiple
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const inputEl = e.currentTarget;
-                    const files = inputEl.files;
-                    if (!files || files.length === 0) return;
-                    setMovePhotoFiles((prev) => [...prev, ...Array.from(files)]);
-                    // Allow selecting the same file again.
+                    const rawFiles = inputEl.files;
+                    if (!rawFiles || rawFiles.length === 0) return;
+                    const fileArr = Array.from(rawFiles);
                     inputEl.value = "";
+                    const detached = await Promise.all(
+                      fileArr.map(async (f) => {
+                        try {
+                          const buf = await f.arrayBuffer();
+                          return new File([buf], f.name, { type: f.type, lastModified: f.lastModified });
+                        } catch {
+                          return f;
+                        }
+                      })
+                    );
+                    setMovePhotoFiles((prev) => [...prev, ...detached]);
                   }}
                 />
                 <div className="flex flex-wrap gap-3">
@@ -985,6 +1092,7 @@ function BodyshopDashboardPageInner() {
                 onClick={() => {
                   setMoveJob(null);
                   setMoveToStatus(null);
+                  setMoveToOptions(null);
                   setMovePhotoFiles([]);
                   setMoveDebug(null);
                   setMoveViewOpen(false);
@@ -1493,13 +1601,26 @@ function BodyshopDashboardPageInner() {
                   accept="image/*,.heic,.heif,image/heic,image/heif"
                   multiple
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     const inputEl = e.currentTarget;
-                    const files = inputEl.files;
-                    if (!files || files.length === 0) return;
-                    setAddPhotoFiles((prev) => [...prev, ...Array.from(files)]);
-                    // Allow selecting the same file again.
+                    const rawFiles = inputEl.files;
+                    if (!rawFiles || rawFiles.length === 0) return;
+                    const fileArr = Array.from(rawFiles);
                     inputEl.value = "";
+                    // Read file bytes immediately so the data survives input reset.
+                    // Some browsers (mobile Safari) release File blob data after the
+                    // input is cleared, causing silent upload failures.
+                    const detached = await Promise.all(
+                      fileArr.map(async (f) => {
+                        try {
+                          const buf = await f.arrayBuffer();
+                          return new File([buf], f.name, { type: f.type, lastModified: f.lastModified });
+                        } catch {
+                          return f;
+                        }
+                      })
+                    );
+                    setAddPhotoFiles((prev) => [...prev, ...detached]);
                   }}
                 />
                 <div className="flex flex-wrap gap-3">

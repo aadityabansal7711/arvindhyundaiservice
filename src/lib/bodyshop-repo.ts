@@ -1,7 +1,7 @@
 import supabaseAdmin from "./supabase-admin";
 import { differenceInDays } from "date-fns";
 import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "./bodyshop-types";
-import { BODYSHOP_JOBS_SEED } from "./bodyshop-seed";
+import { BODYSHOP_JOBS_SEED, STATUS_SECTION_ORDER } from "./bodyshop-seed";
 
 const TABLE_NAME = "bodyshop_jobs";
 
@@ -14,6 +14,14 @@ type ListParams = {
 };
 
 let seedCheckPromise: Promise<void> | null = null;
+
+function normalizeStatusSection(raw: unknown): StatusSection {
+  const s = typeof raw === "string" ? raw : "";
+  if (s === "Approval Hold") return "Approval Pending";
+  if (s === "No Claim") return "Total Loss / Disputed";
+  if (STATUS_SECTION_ORDER.includes(s as StatusSection)) return s as StatusSection;
+  return "Document Pending";
+}
 
 export async function ensureSeededOnce() {
   if (seedCheckPromise) return seedCheckPromise;
@@ -124,6 +132,12 @@ export async function listBodyshopJobs(
     return filtered.map(addMeta);
   }
 
-  return (data ?? []).map((row) => addMeta(row as unknown as BodyshopJob));
+  return (data ?? []).map((row) => {
+    const raw = row as unknown as BodyshopJob;
+    return addMeta({
+      ...raw,
+      status_section: normalizeStatusSection((raw as any).status_section),
+    });
+  });
 }
 

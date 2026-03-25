@@ -7,7 +7,6 @@ export const STATUS_SECTION_ORDER: StatusSection[] = [
   "Document Pending",
   "Survey Pending",
   "Approval Pending",
-  "Approval Hold",
   "Approval Received",
   "PNA",
   "Dismantle",
@@ -21,7 +20,6 @@ export const STATUS_SECTION_ORDER: StatusSection[] = [
   "DO Awaited",
   "Customer Awaited",
   "Total Loss / Disputed",
-  "No Claim",
   "Delivered",
 ];
 

@@ -2,7 +2,6 @@ export type StatusSection =
   | "Survey Pending"
   | "Document Pending"
   | "Approval Pending"
-  | "Approval Hold"
   | "Approval Received"
   | "PNA"
   | "Dismantle"
@@ -16,7 +15,6 @@ export type StatusSection =
   | "DO Awaited"
   | "Customer Awaited"
   | "Total Loss / Disputed"
-  | "No Claim"
   | "Delivered";
 
 export interface BodyshopJob {

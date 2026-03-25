@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { authOptions } from "@/lib/auth-options";
 import { addMeta } from "@/lib/bodyshop-repo";
 import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
+import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 
 // Ensure the job detail (including photos array) is never served stale.
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ const STATUS_MAP: Record<string, StatusSection> = {
   "Survey Pending": "Survey Pending",
   "Document Pending": "Document Pending",
   "Approval Pending": "Approval Pending",
-  "Approval Hold": "Approval Hold",
+  "Approval Hold": "Approval Pending",
   "Approval Received": "Approval Received",
   PNA: "PNA",
   Dismantle: "Dismantle",
@@ -40,9 +41,18 @@ const STATUS_MAP: Record<string, StatusSection> = {
   "DO Awaited": "DO Awaited",
   "Customer Awaited": "Customer Awaited",
   "Total Loss / Disputed": "Total Loss / Disputed",
-  "No Claim": "No Claim",
+  "No Claim": "Total Loss / Disputed",
   Delivered: "Delivered",
 };
+
+function normalizeStatusSection(raw: unknown): StatusSection {
+  const s = typeof raw === "string" ? raw : "";
+  if (s === "Approval Hold") return "Approval Pending";
+  if (s === "No Claim") return "Total Loss / Disputed";
+  return (STATUS_SECTION_ORDER as string[]).includes(s)
+    ? (s as StatusSection)
+    : "Document Pending";
+}
 
 function mapROToBodyshopJob(ro: {
   roNo: string;
@@ -154,8 +164,29 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (data) {
-    return NextResponse.json(addMeta(data as BodyshopJob));
+  let row = data as unknown as BodyshopJob | null;
+
+  // Some installations treat `ro_no` as the canonical identifier (or may have
+  // legacy data where `id` doesn't match the route param). Fall back to `ro_no`.
+  if (!row) {
+    const byRo = await supabaseAdmin
+      .from(TABLE_NAME)
+      .select("*")
+      .eq("ro_no", id)
+      .maybeSingle();
+    if (byRo.error) {
+      return NextResponse.json({ error: byRo.error.message }, { status: 500 });
+    }
+    row = (byRo.data as unknown as BodyshopJob | null) ?? null;
+  }
+
+  if (row) {
+    return NextResponse.json(
+      addMeta({
+        ...row,
+        status_section: normalizeStatusSection((row as any).status_section),
+      })
+    );
   }
 
   const ro = await prisma.repairOrder.findUnique({

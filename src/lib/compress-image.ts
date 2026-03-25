@@ -76,7 +76,26 @@ function compressRasterWithCanvas(file: File): Promise<string> {
     const img = new Image();
     const url = URL.createObjectURL(file);
 
+    let settled = false;
+
+    // Safety net: if the Image never fires onload/onerror (can happen when the
+    // underlying File blob has been released by the browser), reject instead of
+    // hanging the caller forever.
+    const imgTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      reject(
+        new Error(
+          `Image "${file.name}" could not be loaded for compression. Please re-select the photo and try again.`
+        )
+      );
+    }, 15_000);
+
     img.onload = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(imgTimer);
       URL.revokeObjectURL(url);
       // Reduce dimensions to make encoding consistently small across browsers.
       const maxDim = 900;
@@ -163,6 +182,9 @@ function compressRasterWithCanvas(file: File): Promise<string> {
     };
 
     img.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(imgTimer);
       URL.revokeObjectURL(url);
       // Browser couldn't decode the image – fall back to raw data URL for smaller files.
       if (file.size > MAX_FALLBACK_DATAURL_BYTES) {

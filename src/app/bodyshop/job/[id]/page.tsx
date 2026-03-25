@@ -73,9 +73,6 @@ export default function BodyshopJobDetailPage() {
           { key: "approval_date", label: "Approval Date", type: "date" },
           { key: "general_remark", label: "Remark", type: "textarea" },
         ],
-        "Approval Hold": [
-          { key: "general_remark", label: "Hold Remark", type: "textarea" },
-        ],
         "Approval Received": [
           { key: "approval_date", label: "Approval Date", type: "date" },
           { key: "general_remark", label: "Remark", type: "textarea" },
@@ -126,9 +123,6 @@ export default function BodyshopJobDetailPage() {
         ],
         "Total Loss / Disputed": [
           { key: "general_remark", label: "Dispute Remark", type: "textarea" },
-        ],
-        "No Claim": [
-          { key: "general_remark", label: "No-Claim Remark", type: "textarea" },
         ],
         Delivered: [
           { key: "general_remark", label: "Delivery Remark", type: "textarea" },

@@ -13,13 +13,15 @@ import {
     X,
     Car,
     Database,
-    KanbanSquare
+    KanbanSquare,
+    PackageCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
 
 const sidebarItems = [
     { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
+    { name: "Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -57,8 +59,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         return true;
     });
 
-    const bodyshopItem = filteredSidebarItems.filter((i) => i.href.startsWith("/bodyshop"));
+    // Render Bodyshop "board" link(s) above stages, but keep "Delivered" below stages.
+    const deliveredItem = filteredSidebarItems.find((i) => i.href === "/bodyshop/delivered");
+    const bodyshopItem = filteredSidebarItems.filter(
+        (i) => i.href.startsWith("/bodyshop") && i.href !== "/bodyshop/delivered"
+    );
     const nonBodyshopItems = filteredSidebarItems.filter((i) => !i.href.startsWith("/bodyshop"));
+    const showBodyshopStages =
+        pathname.startsWith("/bodyshop") &&
+        !pathname.startsWith("/bodyshop/delivered") &&
+        !isSidebarCollapsed;
+    const isSidebarItemActive = (href: string) => {
+        if (href === "/bodyshop") {
+            // `/bodyshop/delivered` should not mark "Bodyshop Board" as active.
+            return pathname === "/bodyshop" || (pathname.startsWith("/bodyshop") && !pathname.startsWith("/bodyshop/delivered"));
+        }
+        return pathname.startsWith(href);
+    };
 
     useEffect(() => {
         if (!session || !isManager) return;
@@ -114,27 +131,56 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             onClick={() => setIsMobileMenuOpen(false)}
                             className={cn(
                                 "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
-                                pathname.startsWith(item.href)
+                                isSidebarItemActive(item.href)
                                     ? "bg-white/10 text-white font-medium shadow-inner"
                                     : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
                             )}
                         >
                             <item.icon className={cn(
                                 "w-5 h-5 shrink-0",
-                                pathname.startsWith(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                                isSidebarItemActive(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
                             )} />
                             {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
-                            {pathname.startsWith(item.href) && !isSidebarCollapsed && (
+                            {isSidebarItemActive(item.href) && !isSidebarCollapsed && (
                                 <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
                             )}
                         </Link>
                     ))}
-                    {pathname.startsWith("/bodyshop") && !isSidebarCollapsed && (
+                    {showBodyshopStages && (
                         <div className="mt-4">
                             <Suspense fallback={<div className="bg-white/10 rounded-xl h-32 animate-pulse" />}>
                                 <SidebarStages />
                             </Suspense>
                         </div>
+                    )}
+                    {deliveredItem && (
+                        <Link
+                            key={deliveredItem.name}
+                            href={deliveredItem.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                                "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
+                                showBodyshopStages && "mt-2",
+                                pathname.startsWith(deliveredItem.href)
+                                    ? "bg-white/10 text-white font-medium shadow-inner"
+                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                            )}
+                        >
+                            <deliveredItem.icon
+                                className={cn(
+                                    "w-5 h-5 shrink-0",
+                                    pathname.startsWith(deliveredItem.href)
+                                        ? "text-blue-300"
+                                        : "text-slate-500 group-hover:text-slate-300"
+                                )}
+                            />
+                            {!isSidebarCollapsed && (
+                                <span className="truncate">{deliveredItem.name}</span>
+                            )}
+                            {pathname.startsWith(deliveredItem.href) && !isSidebarCollapsed && (
+                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                            )}
+                        </Link>
                     )}
                     {nonBodyshopItems.map((item) => (
                         <Link
@@ -143,17 +189,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             onClick={() => setIsMobileMenuOpen(false)}
                             className={cn(
                                 "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
-                                pathname.startsWith(item.href)
+                                isSidebarItemActive(item.href)
                                     ? "bg-white/10 text-white font-medium shadow-inner"
                                     : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
                             )}
                         >
                             <item.icon className={cn(
                                 "w-5 h-5 shrink-0",
-                                pathname.startsWith(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                                isSidebarItemActive(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
                             )} />
                             {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
-                            {pathname.startsWith(item.href) && !isSidebarCollapsed && (
+                            {isSidebarItemActive(item.href) && !isSidebarCollapsed && (
                                 <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
                             )}
                         </Link>
