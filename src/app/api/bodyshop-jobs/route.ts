@@ -6,6 +6,11 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import supabaseAdmin from "@/lib/supabase-admin";
 
+// Photos and job fields are updated frequently (Move/Add actions). Force
+// dynamic behavior so Next does not cache stale responses.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const HIDDEN_TABLE = "bodyshop_job_hidden";
 
 type CacheEntry<T> = { value: T; expiresAt: number };
@@ -365,8 +370,13 @@ export async function GET(request: NextRequest) {
       : undefined;
 
   const cacheKey = `list:view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
-  const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
-  if (cached) return NextResponse.json(cached);
+  // Photos are updated frequently (Move/Add photo append). For `view=board` we
+  // disable this server in-memory cache to avoid returning stale photo counts.
+  const shouldUseCache = view !== "board";
+  if (shouldUseCache) {
+    const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
+    if (cached) return NextResponse.json(cached);
+  }
 
   const baseWhere = {
     ...(openOnly ? { vehicleOutDate: null } : {}),
@@ -462,7 +472,9 @@ export async function GET(request: NextRequest) {
     ? merged.filter((j) => j.status_section !== "Delivered")
     : merged;
   const filtered = filterJobs(openFiltered, search, status, limit);
-  cacheSet(cacheKey, filtered, term ? 2000 : 5000);
+  if (shouldUseCache) {
+    cacheSet(cacheKey, filtered, term ? 2000 : 5000);
+  }
   return NextResponse.json(filtered);
 }
 

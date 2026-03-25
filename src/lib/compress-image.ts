@@ -1,8 +1,9 @@
 // Next.js route handlers can reject large JSON bodies; base64 expands size ~33%.
 // To make uploads deterministic, keep the final base64 data URL length very small.
-const MAX_SIZE_BYTES = 40 * 1024; // used for occasional blob/fallback size checks
+// 60KB cap is intentionally conservative so the JSON request body stays under limits.
+const MAX_SIZE_BYTES = 30 * 1024; // (not strictly required anymore, but kept for guardrails)
 const MAX_FALLBACK_DATAURL_BYTES = 70 * 1024; // raw bytes (fallback only when encoding fails)
-const MAX_DATAURL_LENGTH = 80 * 1024; // final data URL string length cap (deterministic)
+const MAX_DATAURL_LENGTH = 60 * 1024; // final data URL string length cap (deterministic)
 /** Raw HEIC fallback only when conversion fails. */
 const MAX_HEIC_RAW_FALLBACK_BYTES = 800 * 1024;
 const COMPRESS_TIMEOUT_MS = 20000;
@@ -13,7 +14,19 @@ function fileToDataUrl(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       if (typeof reader.result === "string") {
-        resolve(reader.result);
+        const dataUrl = reader.result;
+        // Enforce the same deterministic limit for ALL fallback paths.
+        // Some fallbacks skip canvas/JPEG quality loops and can otherwise exceed
+        // JSON request body limits on the server.
+        if (dataUrl.length > MAX_DATAURL_LENGTH) {
+          reject(
+            new Error(
+              `Image "${file.name}" is too large to upload. Please use a smaller JPG/PNG.`
+            )
+          );
+          return;
+        }
+        resolve(dataUrl);
       } else {
         reject(new Error("Failed to read file as data URL"));
       }
@@ -65,7 +78,8 @@ function compressRasterWithCanvas(file: File): Promise<string> {
 
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const maxDim = 1200;
+      // Reduce dimensions to make encoding consistently small across browsers.
+      const maxDim = 900;
       let w = img.width || 1;
       let h = img.height || 1;
       if (w > maxDim || h > maxDim) {
@@ -121,8 +135,8 @@ function compressRasterWithCanvas(file: File): Promise<string> {
 
       // Deterministic encoding path: only use toDataURL, and keep lowering quality
       // until we fit the base64 length ceiling.
-      let q = 0.92;
-      for (let attempt = 0; attempt < 10; attempt += 1) {
+      let q = 0.85;
+      for (let attempt = 0; attempt < 14; attempt += 1) {
         try {
           const dataUrl = canvas!.toDataURL("image/jpeg", q);
           if (dataUrl.length <= MAX_DATAURL_LENGTH) {
@@ -132,7 +146,7 @@ function compressRasterWithCanvas(file: File): Promise<string> {
         } catch {
           // ignore and lower quality
         }
-        q = Math.max(0.1, q - 0.1);
+        q = Math.max(0.05, q - 0.08);
       }
 
       // Last resort: raw data URL only if the original file is already small-ish.

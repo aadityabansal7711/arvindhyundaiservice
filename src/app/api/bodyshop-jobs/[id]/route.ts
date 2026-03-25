@@ -6,6 +6,10 @@ import { authOptions } from "@/lib/auth-options";
 import { addMeta } from "@/lib/bodyshop-repo";
 import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
 
+// Ensure the job detail (including photos array) is never served stale.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const TABLE_NAME = "bodyshop_jobs";
 const STAGE_TABLE = "bodyshop_job_stages";
 const HIDDEN_TABLE = "bodyshop_job_hidden";

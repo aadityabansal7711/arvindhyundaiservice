@@ -297,6 +297,22 @@ function BodyshopDashboardPageInner() {
       emitCountsRefresh();
       setIsAdding(false);
       setAddDebug(null);
+
+      // Refresh the created job row so Photos/View update immediately.
+      try {
+        const refreshed = await apiGet<BodyshopJobWithMeta>(
+          `/api/bodyshop-jobs/${encodeURIComponent(ro)}`
+        );
+        setJobs((prev) => {
+          const exists = prev.some((j) => j.id === ro);
+          return exists
+            ? prev.map((j) => (j.id === ro ? refreshed : j))
+            : [refreshed, ...prev];
+        });
+      } catch (e) {
+        console.warn("Failed to refresh created job detail:", e);
+      }
+
       setAddForm({
         branch_id: branchLocked && userBranchId ? userBranchId : "",
         ro_no: "",
@@ -310,6 +326,17 @@ function BodyshopDashboardPageInner() {
       });
       setAddPhotoFiles([]);
       await fetchJobs();
+
+      // Ensure the created job row isn't overwritten by a potentially stale
+      // board list response.
+      try {
+        const refreshed = await apiGet<BodyshopJobWithMeta>(
+          `/api/bodyshop-jobs/${encodeURIComponent(ro)}`
+        );
+        setJobs((prev) => prev.map((j) => (j.id === ro ? refreshed : j)));
+      } catch (e) {
+        console.warn("Failed to re-refresh created job after board fetch:", e);
+      }
     } catch (e) {
       setAddError((e as Error)?.message ?? "Failed to add record");
       setAddDebug(`Failed: ${(e as Error)?.message ?? "Unknown error"}`);
@@ -364,8 +391,19 @@ function BodyshopDashboardPageInner() {
     setStageViewRow(null);
   };
 
-  const onMoveToNextStatus = (job: BodyshopJobWithMeta) => {
-    const nextStatus = getNextStatus(job.status_section);
+  const onMoveToNextStatus = async (job: BodyshopJobWithMeta) => {
+    // Refetch this job detail so we compute the next status (and show photo count
+    // later) from the latest server state.
+    let currentJob = job;
+    try {
+      currentJob = await apiGet<BodyshopJobWithMeta>(
+        `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
+      );
+    } catch (e) {
+      console.warn("Failed to refresh job before move:", e);
+    }
+
+    const nextStatus = getNextStatus(currentJob.status_section);
     if (!nextStatus) return;
 
     const now = new Date();
@@ -375,7 +413,7 @@ function BodyshopDashboardPageInner() {
       "yyyy-MM-dd HH:mm"
     )}`;
 
-    setMoveJob(job);
+    setMoveJob(currentJob);
     setMoveToStatus(nextStatus);
     setMoveViewOpen(false);
     setMoveError(null);
@@ -388,6 +426,7 @@ function BodyshopDashboardPageInner() {
   const submitMove = async () => {
     if (!moveJob || !moveToStatus) return;
     setMoveDebug("Clicked Move");
+    const jobId = moveJob.id;
 
     const movementAtRaw = moveForm.movement_at.trim();
     const movementAtDate = movementAtRaw
@@ -434,7 +473,7 @@ function BodyshopDashboardPageInner() {
 
       setJobs((prev) =>
         prev.map((j) =>
-          j.id === moveJob.id
+          j.id === jobId
             ? {
                 ...j,
                 status_section: moveToStatus,
@@ -451,6 +490,19 @@ function BodyshopDashboardPageInner() {
         )
       );
       emitCountsRefresh();
+      // Refresh the full board (status ordering, list filters, etc.).
+      await fetchJobs();
+
+      // Re-sync with server for this specific job so photo counts and the
+      // "View" button reflect what was actually persisted.
+      try {
+        const refreshed = await apiGet<BodyshopJobWithMeta>(
+          `/api/bodyshop-jobs/${encodeURIComponent(jobId)}`
+        );
+        setJobs((prev) => prev.map((j) => (j.id === jobId ? refreshed : j)));
+      } catch (e) {
+        console.warn("Failed to refresh moved job detail:", e);
+      }
 
       setMoveJob(null);
       setMoveToStatus(null);
@@ -612,10 +664,26 @@ function BodyshopDashboardPageInner() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setPhotoPreview({
-                                    title: `RO ${job.ro_no} photos`,
-                                    photos: job.photos as string[],
-                                  });
+                                  void (async () => {
+                                    try {
+                                      const refreshed = await apiGet<BodyshopJobWithMeta>(
+                                        `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
+                                      );
+                                      const photos = Array.isArray(refreshed.photos)
+                                        ? refreshed.photos
+                                        : [];
+                                      setPhotoPreview({
+                                        title: `RO ${refreshed.ro_no} photos`,
+                                        photos,
+                                      });
+                                    } catch {
+                                      // Fallback to whatever board state we currently have.
+                                      setPhotoPreview({
+                                        title: `RO ${job.ro_no} photos`,
+                                        photos: job.photos as string[],
+                                      });
+                                    }
+                                  })();
                                 }}
                                 className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
                               >
@@ -858,14 +926,12 @@ function BodyshopDashboardPageInner() {
                   multiple
                   className="hidden"
                   onChange={(e) => {
-                    const files = e.target.files;
-                    if (files?.length) {
-                      setMovePhotoFiles((prev) => [
-                        ...prev,
-                        ...Array.from(files),
-                      ]);
-                      e.target.value = "";
-                    }
+                    const inputEl = e.currentTarget;
+                    const files = inputEl.files;
+                    if (!files || files.length === 0) return;
+                    setMovePhotoFiles((prev) => [...prev, ...Array.from(files)]);
+                    // Allow selecting the same file again.
+                    inputEl.value = "";
                   }}
                 />
                 <div className="flex flex-wrap gap-3">
@@ -1428,14 +1494,12 @@ function BodyshopDashboardPageInner() {
                   multiple
                   className="hidden"
                   onChange={(e) => {
-                    const files = e.target.files;
-                    if (files?.length) {
-                      setAddPhotoFiles((prev) => [
-                        ...prev,
-                        ...Array.from(files),
-                      ]);
-                      e.target.value = "";
-                    }
+                    const inputEl = e.currentTarget;
+                    const files = inputEl.files;
+                    if (!files || files.length === 0) return;
+                    setAddPhotoFiles((prev) => [...prev, ...Array.from(files)]);
+                    // Allow selecting the same file again.
+                    inputEl.value = "";
                   }}
                 />
                 <div className="flex flex-wrap gap-3">
