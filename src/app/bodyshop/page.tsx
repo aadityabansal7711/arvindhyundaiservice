@@ -30,6 +30,13 @@ type StageHistoryRow = {
   remark: string | null;
   gm_remark: string | null;
 };
+type PhotoPreviewState = {
+  title: string;
+  photos: string[];
+  loading: boolean;
+  error: string | null;
+  visibleCount: number;
+};
 
 function BodyshopDashboardPageInner() {
   const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
@@ -77,10 +84,7 @@ function BodyshopDashboardPageInner() {
   const [movePhotoFiles, setMovePhotoFiles] = useState<File[]>([]);
   const addPhotoInputRef = useRef<HTMLInputElement>(null);
   const movePhotoInputRef = useRef<HTMLInputElement>(null);
-  const [photoPreview, setPhotoPreview] = useState<{
-    title: string;
-    photos: string[];
-  } | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<PhotoPreviewState | null>(null);
 
   const userPermissions = ((session?.user as any)?.permissions ?? []) as string[];
   const userBranchId = (session?.user as any)?.branchId as string | undefined;
@@ -702,10 +706,20 @@ function BodyshopDashboardPageInner() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setPhotoPreview({
+                                  title: `RO ${job.ro_no} photos`,
+                                  photos: [],
+                                  loading: true,
+                                  error: null,
+                                  visibleCount: 12,
+                                });
                                 void (async () => {
                                   try {
-                                    const refreshed = await apiGet<BodyshopJobWithMeta>(
-                                      `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
+                                    const refreshed = await apiGet<{
+                                      ro_no: string;
+                                      photos: string[];
+                                    }>(
+                                      `/api/bodyshop-jobs/${encodeURIComponent(job.id)}?photosOnly=1`
                                     );
                                     const photos = Array.isArray(refreshed.photos)
                                       ? refreshed.photos
@@ -713,12 +727,18 @@ function BodyshopDashboardPageInner() {
                                     setPhotoPreview({
                                       title: `RO ${refreshed.ro_no} photos`,
                                       photos,
+                                      loading: false,
+                                      error: null,
+                                      visibleCount: 12,
                                     });
                                   } catch {
                                     // Fallback to whatever board state we currently have.
                                     setPhotoPreview({
                                       title: `RO ${job.ro_no} photos`,
                                       photos: Array.isArray(job.photos) ? job.photos : [],
+                                      loading: false,
+                                      error: "Failed to load latest photos. Showing cached photos.",
+                                      visibleCount: 12,
                                     });
                                   }
                                 })();
@@ -819,8 +839,9 @@ function BodyshopDashboardPageInner() {
                     {photoPreview.title}
                   </div>
                   <div className="text-sm text-slate-500">
-                    {photoPreview.photos.length} photo
-                    {photoPreview.photos.length !== 1 ? "s" : ""}
+                    {photoPreview.loading
+                      ? "Loading photos..."
+                      : `${photoPreview.photos.length} photo${photoPreview.photos.length !== 1 ? "s" : ""}`}
                   </div>
                 </div>
                 <button
@@ -833,8 +854,20 @@ function BodyshopDashboardPageInner() {
                 </button>
               </div>
 
+              {photoPreview.error && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  {photoPreview.error}
+                </div>
+              )}
+
+              {photoPreview.loading ? (
+                <div className="py-8 text-center text-sm text-slate-500">Loading photos...</div>
+              ) : photoPreview.photos.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-500">No photos available.</div>
+              ) : (
+                <>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {photoPreview.photos.map((src, idx) => (
+                {photoPreview.photos.slice(0, photoPreview.visibleCount).map((src, idx) => (
                   <a
                     key={idx}
                     href={src}
@@ -852,6 +885,28 @@ function BodyshopDashboardPageInner() {
                   </a>
                 ))}
               </div>
+              {photoPreview.visibleCount < photoPreview.photos.length && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPhotoPreview((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              visibleCount: Math.min(prev.visibleCount + 12, prev.photos.length),
+                            }
+                          : prev
+                      )
+                    }
+                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  >
+                    Load more photos
+                  </button>
+                </div>
+              )}
+                </>
+              )}
             </div>
           </div>
         </div>

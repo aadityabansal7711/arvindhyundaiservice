@@ -15,6 +15,22 @@ const TABLE_NAME = "bodyshop_jobs";
 const STAGE_TABLE = "bodyshop_job_stages";
 const HIDDEN_TABLE = "bodyshop_job_hidden";
 const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
+type CacheEntry<T> = { value: T; expiresAt: number };
+const photoCache = new Map<string, CacheEntry<{ id: string; ro_no: string; photos: string[] }>>();
+
+function getPhotoCache(id: string): { id: string; ro_no: string; photos: string[] } | null {
+  const hit = photoCache.get(id);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    photoCache.delete(id);
+    return null;
+  }
+  return hit.value;
+}
+
+function setPhotoCache(id: string, value: { id: string; ro_no: string; photos: string[] }) {
+  photoCache.set(id, { value, expiresAt: Date.now() + 15000 });
+}
 
 function isGmUser(email: string | null | undefined) {
   return (email ?? "").trim().toLowerCase() === GM_EMAIL;
@@ -132,7 +148,7 @@ function mapROToBodyshopJob(ro: {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const session = await getServerSession(authOptions);
@@ -141,6 +157,13 @@ export async function GET(
   }
 
   const { id } = await context.params;
+  const url = new URL(request.url);
+  const photosOnly = url.searchParams.get("photosOnly") === "1";
+
+  if (photosOnly) {
+    const cached = getPhotoCache(id);
+    if (cached) return NextResponse.json(cached);
+  }
 
   // If it's been deleted/tombstoned, don't show it even if it exists in Prisma.
   try {
@@ -156,9 +179,10 @@ export async function GET(
     // ignore if table doesn't exist yet
   }
 
+  const baseSelect = photosOnly ? "id,ro_no,photos" : "*";
   const { data, error } = await supabaseAdmin
     .from(TABLE_NAME)
-    .select("*")
+    .select(baseSelect)
     .eq("id", id)
     .maybeSingle();
 
@@ -173,7 +197,7 @@ export async function GET(
   if (!row) {
     const byRo = await supabaseAdmin
       .from(TABLE_NAME)
-      .select("*")
+      .select(baseSelect)
       .eq("ro_no", id)
       .maybeSingle();
     if (byRo.error) {
@@ -183,6 +207,19 @@ export async function GET(
   }
 
   if (row) {
+    if (photosOnly) {
+      const photos = Array.isArray(row.photos)
+        ? (row.photos as unknown[]).filter((p): p is string => typeof p === "string")
+        : [];
+      const payload = {
+        id: String(row.id ?? id),
+        ro_no: String(row.ro_no ?? id),
+        photos,
+      };
+      setPhotoCache(id, payload);
+      if (payload.id !== id) setPhotoCache(payload.id, payload);
+      return NextResponse.json(payload);
+    }
     return NextResponse.json(
       addMeta({
         ...row,
@@ -225,6 +262,10 @@ export async function GET(
 
   if (!ro) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  if (photosOnly) {
+    return NextResponse.json({ id, ro_no: ro.roNo, photos: [] as string[] });
   }
 
   return NextResponse.json(addMeta(mapROToBodyshopJob(ro)));
@@ -282,6 +323,7 @@ export async function PATCH(
   }
 
   const { id } = await context.params;
+  photoCache.delete(id);
   const body = await request.json();
 
   const userEmail = (session.user as any)?.email as string | undefined;
@@ -467,6 +509,7 @@ export async function DELETE(
   }
 
   const { id } = await context.params;
+  photoCache.delete(id);
 
   // Tombstone first so refresh won't re-add this RO from Prisma open ROs.
   try {
