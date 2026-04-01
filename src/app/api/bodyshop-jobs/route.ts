@@ -337,29 +337,27 @@ export async function GET(request: NextRequest) {
 
   await ensureSeededOnce();
 
+  // Keep board payload lightweight. Full photo arrays are fetched only on detail
+  // open to avoid sending large base64/json blobs on list load.
   const boardSelect =
-    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,photos,status_section,promised_date,created_at,updated_at";
+    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,status_section,promised_date,created_at,updated_at";
 
-  const supabaseJobs = await listBodyshopJobs({
-    limit: Math.min(limit * 2, countsOnly ? 5000 : 800),
-    statusSection: countsOnly ? "All" : status,
-    search,
-    branchIds: effectiveBranchIds,
-    select: view === "board" ? boardSelect : undefined,
-  });
+  const [supabaseJobs, hiddenRowsResult] = await Promise.all([
+    listBodyshopJobs({
+      limit: Math.min(limit * 2, countsOnly ? 5000 : 800),
+      statusSection: countsOnly ? "All" : status,
+      search,
+      branchIds: effectiveBranchIds,
+      select: view === "board" ? boardSelect : undefined,
+    }),
+    // Deleted/tombstoned IDs so refresh doesn't re-add them from Prisma.
+    supabaseAdmin.from(HIDDEN_TABLE).select("job_id"),
+  ]);
 
-  // Deleted/tombstoned IDs so refresh doesn't re-add them from Prisma.
   const hiddenIds = new Set<string>();
-  try {
-    const { data: hiddenRows } = await supabaseAdmin
-      .from(HIDDEN_TABLE)
-      .select("job_id");
-    for (const r of hiddenRows ?? []) {
-      const id = (r as any)?.job_id;
-      if (typeof id === "string" && id) hiddenIds.add(id);
-    }
-  } catch {
-    // Ignore if table doesn't exist yet; rows may reappear until SQL is applied.
+  for (const r of hiddenRowsResult.data ?? []) {
+    const id = (r as any)?.job_id;
+    if (typeof id === "string" && id) hiddenIds.add(id);
   }
 
   const term = search?.trim();

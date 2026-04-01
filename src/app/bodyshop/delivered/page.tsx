@@ -278,38 +278,34 @@ function DeliveredPageInner() {
                           : "—"}
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
-                        {Array.isArray(job.photos) && job.photos.length > 0 ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void (async () => {
-                                try {
-                                  const refreshed = await apiGet<BodyshopJobWithMeta>(
-                                    `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
-                                  );
-                                  const photos = Array.isArray(refreshed.photos)
-                                    ? refreshed.photos
-                                    : [];
-                                  setPhotoPreview({
-                                    title: `RO ${refreshed.ro_no} photos`,
-                                    photos,
-                                  });
-                                } catch {
-                                  setPhotoPreview({
-                                    title: `RO ${job.ro_no} photos`,
-                                    photos: job.photos as string[],
-                                  });
-                                }
-                              })();
-                            }}
-                            className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
-                          >
-                            View ({job.photos.length})
-                          </button>
-                        ) : (
-                          <span className="text-slate-400 text-xs">—</span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void (async () => {
+                              try {
+                                const refreshed = await apiGet<BodyshopJobWithMeta>(
+                                  `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
+                                );
+                                const photos = Array.isArray(refreshed.photos)
+                                  ? refreshed.photos
+                                  : [];
+                                setPhotoPreview({
+                                  title: `RO ${refreshed.ro_no} photos`,
+                                  photos,
+                                });
+                              } catch {
+                                setPhotoPreview({
+                                  title: `RO ${job.ro_no} photos`,
+                                  photos: Array.isArray(job.photos) ? job.photos : [],
+                                });
+                              }
+                            })();
+                          }}
+                          className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
+                        >
+                          {Array.isArray(job.photos) ? `View (${job.photos.length})` : "View"}
+                        </button>
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
                         {job.reg_no ?? "—"}

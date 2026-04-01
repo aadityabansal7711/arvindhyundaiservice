@@ -367,18 +367,9 @@ function BodyshopDashboardPageInner() {
         service_advisor: "",
       });
       setAddPhotoFiles([]);
-      await fetchJobs();
+      void fetchJobs();
 
-      // Ensure the created job row isn't overwritten by a potentially stale
-      // board list response.
-      try {
-        const refreshed = await apiGet<BodyshopJobWithMeta>(
-          `/api/bodyshop-jobs/${encodeURIComponent(ro)}`
-        );
-        setJobs((prev) => prev.map((j) => (j.id === ro ? refreshed : j)));
-      } catch (e) {
-        console.warn("Failed to re-refresh created job after board fetch:", e);
-      }
+      // Background board refresh is enough here; avoid blocking create flow.
     } catch (e) {
       setAddError((e as Error)?.message ?? "Failed to add record");
       setAddDebug(`Failed: ${(e as Error)?.message ?? "Unknown error"}`);
@@ -537,8 +528,8 @@ function BodyshopDashboardPageInner() {
         )
       );
       emitCountsRefresh();
-      // Refresh the full board (status ordering, list filters, etc.).
-      await fetchJobs();
+      // Refresh the full board in the background so move feels instant.
+      void fetchJobs();
 
       // Re-sync with server for this specific job so photo counts and the
       // "View" button reflect what was actually persisted.
@@ -707,39 +698,35 @@ function BodyshopDashboardPageInner() {
                             {job.service_advisor ?? "—"}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
-                            {Array.isArray(job.photos) && job.photos.length > 0 ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void (async () => {
-                                    try {
-                                      const refreshed = await apiGet<BodyshopJobWithMeta>(
-                                        `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
-                                      );
-                                      const photos = Array.isArray(refreshed.photos)
-                                        ? refreshed.photos
-                                        : [];
-                                      setPhotoPreview({
-                                        title: `RO ${refreshed.ro_no} photos`,
-                                        photos,
-                                      });
-                                    } catch {
-                                      // Fallback to whatever board state we currently have.
-                                      setPhotoPreview({
-                                        title: `RO ${job.ro_no} photos`,
-                                        photos: job.photos as string[],
-                                      });
-                                    }
-                                  })();
-                                }}
-                                className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
-                              >
-                                View ({job.photos.length})
-                              </button>
-                            ) : (
-                              <span className="text-slate-400 text-xs">—</span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void (async () => {
+                                  try {
+                                    const refreshed = await apiGet<BodyshopJobWithMeta>(
+                                      `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
+                                    );
+                                    const photos = Array.isArray(refreshed.photos)
+                                      ? refreshed.photos
+                                      : [];
+                                    setPhotoPreview({
+                                      title: `RO ${refreshed.ro_no} photos`,
+                                      photos,
+                                    });
+                                  } catch {
+                                    // Fallback to whatever board state we currently have.
+                                    setPhotoPreview({
+                                      title: `RO ${job.ro_no} photos`,
+                                      photos: Array.isArray(job.photos) ? job.photos : [],
+                                    });
+                                  }
+                                })();
+                              }}
+                              className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200"
+                            >
+                              {Array.isArray(job.photos) ? `View (${job.photos.length})` : "View"}
+                            </button>
                           </td>
                           <td className="px-5 py-3 text-sm">
                             <div className="flex items-center gap-2">
