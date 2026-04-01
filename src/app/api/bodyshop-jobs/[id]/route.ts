@@ -23,9 +23,11 @@ function isGmUser(email: string | null | undefined) {
 const STATUS_MAP: Record<string, StatusSection> = {
   OPEN: "Document Pending",
   DOCUMENT_PENDING: "Document Pending",
+  CLAIM_INTIMATION_PENDING: "Claim Intimation Pending",
   SURVEY_PENDING: "Survey Pending",
   "Survey Pending": "Survey Pending",
   "Document Pending": "Document Pending",
+  "Claim Intimation Pending": "Claim Intimation Pending",
   "Approval Pending": "Approval Pending",
   "Approval Hold": "Approval Pending",
   "Approval Received": "Approval Received",

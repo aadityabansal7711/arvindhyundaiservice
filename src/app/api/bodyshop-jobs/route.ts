@@ -31,9 +31,11 @@ function cacheSet<T>(key: string, value: T, ttlMs: number) {
 const STATUS_MAP: Record<string, StatusSection> = {
   OPEN: "Document Pending",
   DOCUMENT_PENDING: "Document Pending",
+  CLAIM_INTIMATION_PENDING: "Claim Intimation Pending",
   SURVEY_PENDING: "Survey Pending",
   "Survey Pending": "Survey Pending",
   "Document Pending": "Document Pending",
+  "Claim Intimation Pending": "Claim Intimation Pending",
   "Approval Pending": "Approval Pending",
   "Approval Hold": "Approval Pending",
   "Approval Received": "Approval Received",
@@ -65,6 +67,7 @@ function normalizeStatusSection(raw: unknown): StatusSection {
   // Keep this list in sync with `STATUS_SECTION_ORDER`.
   const valid: StatusSection[] = [
     "Document Pending",
+    "Claim Intimation Pending",
     "Survey Pending",
     "Approval Pending",
     "Approval Received",
@@ -254,10 +257,10 @@ export async function GET(request: NextRequest) {
 
     const stages: Record<string, number> = {};
     for (const s of [
-      "Document Pending", "Survey Pending", "Approval Pending", "Approval Received",
-      "PNA", "Dismantle", "Mechanical", "Cutting", "Denting", "Painting", "Fitting",
-      "Ready for Pre-Invoice", "Billed but Not Ready", "DO Awaited", "Customer Awaited",
-      "Total Loss / Disputed", "Delivered",
+      "Document Pending", "Claim Intimation Pending", "Survey Pending", "Approval Pending",
+      "Approval Received", "PNA", "Dismantle", "Mechanical", "Cutting", "Denting",
+      "Painting", "Fitting", "Ready for Pre-Invoice", "Billed but Not Ready",
+      "DO Awaited", "Customer Awaited", "Total Loss / Disputed", "Delivered",
     ] as StatusSection[]) {
       stages[s] = 0;
     }

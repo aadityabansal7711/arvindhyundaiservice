@@ -1,6 +1,7 @@
 export type StatusSection =
   | "Survey Pending"
   | "Document Pending"
+  | "Claim Intimation Pending"
   | "Approval Pending"
   | "Approval Received"
   | "PNA"

@@ -68,6 +68,12 @@ export default function BodyshopJobDetailPage() {
           { key: "whatsapp_date", label: "Whatsapp Date", type: "date" },
           { key: "advisor_remark", label: "Advisor Remark", type: "textarea" },
         ],
+        "Claim Intimation Pending": [
+          { key: "claim_no", label: "Claim No", type: "text" },
+          { key: "claim_intimation_date", label: "Claim Intimation Date", type: "date" },
+          { key: "whatsapp_date", label: "Whatsapp Date", type: "date" },
+          { key: "advisor_remark", label: "Advisor Remark", type: "textarea" },
+        ],
         "Approval Pending": [
           { key: "hap_status", label: "HAP/NHAP", type: "select", options: ["HAP", "N HAP"] },
           { key: "approval_date", label: "Approval Date", type: "date" },
