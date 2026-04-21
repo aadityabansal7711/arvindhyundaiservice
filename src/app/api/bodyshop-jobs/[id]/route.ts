@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth-options";
 import { addMeta } from "@/lib/bodyshop-repo";
 import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
+import { bypassUserDeniesBranchAccess } from "@/lib/bypass-only-user";
 
 // Ensure the job detail (including photos array) is never served stale.
 export const dynamic = "force-dynamic";
@@ -207,6 +208,10 @@ export async function GET(
   }
 
   if (row) {
+    const rawBranch = (row as { branch_id?: string | null }).branch_id;
+    if (await bypassUserDeniesBranchAccess((session.user as any)?.email, rawBranch ?? null)) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
     if (photosOnly) {
       const photos = Array.isArray(row.photos)
         ? (row.photos as unknown[]).filter((p): p is string => typeof p === "string")
@@ -261,6 +266,10 @@ export async function GET(
   });
 
   if (!ro) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  if (await bypassUserDeniesBranchAccess((session.user as any)?.email, ro.branchId)) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
@@ -376,6 +385,18 @@ export async function PATCH(
   );
   if (!mergedBase) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  const baseBranchId = (mergedBase.branch_id as string | null) ?? null;
+  if (await bypassUserDeniesBranchAccess(userEmail, baseBranchId)) {
+    return NextResponse.json({ error: "Job not found" }, { status: 404 });
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "branch_id")) {
+    const nextBid = body.branch_id ? String(body.branch_id).trim() : null;
+    if (await bypassUserDeniesBranchAccess(userEmail, nextBid)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   const merged: Record<string, unknown> = { ...mergedBase };

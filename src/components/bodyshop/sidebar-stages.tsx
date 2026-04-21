@@ -103,29 +103,29 @@ export function SidebarStages() {
   const allCount = counts?.all ?? 0;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <LayoutGrid className="w-4 h-4 text-slate-500 shrink-0" />
+    <div className="rounded-xl border border-white/10 bg-white/[0.06] shadow-inner overflow-hidden">
+      <div className="px-4 py-3 border-b border-white/10">
+        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+          <LayoutGrid className="w-4 h-4 text-sky-300 shrink-0" />
           Stages
         </div>
       </div>
-      <div className="p-2 max-h-[min(60vh,400px)] overflow-y-auto">
+      <div className="p-2 max-h-[min(60vh,400px)] overflow-y-auto custom-scrollbar">
         <button
           type="button"
           onClick={() => selectStage("All")}
           className={
             "w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors " +
             (activeStage === "All"
-              ? "bg-blue-50 text-blue-700 font-semibold"
-              : "hover:bg-slate-50 text-slate-700")
+              ? "bg-sky-400/15 text-white font-semibold ring-1 ring-sky-300/20"
+              : "hover:bg-white/[0.07] text-slate-300")
           }
         >
           <span>All Vehicles</span>
           <span
             className={
               "text-xs tabular-nums " +
-              (activeStage === "All" ? "text-blue-600" : "text-slate-500")
+              (activeStage === "All" ? "text-sky-200" : "text-slate-500")
             }
           >
             {allCount}
@@ -143,15 +143,15 @@ export function SidebarStages() {
                 className={
                   "w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors " +
                   (isActive
-                    ? "bg-blue-50 text-blue-700 font-semibold"
-                    : "hover:bg-slate-50 text-slate-700")
+                    ? "bg-sky-400/15 text-white font-semibold ring-1 ring-sky-300/20"
+                    : "hover:bg-white/[0.07] text-slate-300")
                 }
               >
                 <span className="truncate">{s}</span>
                 <span
                   className={
                     "text-xs tabular-nums shrink-0 ml-2 " +
-                    (isActive ? "text-blue-600" : "text-slate-500")
+                    (isActive ? "text-sky-200" : "text-slate-500")
                   }
                 >
                   {count}

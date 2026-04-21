@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -24,26 +25,33 @@ export async function GET(req: NextRequest) {
                 const user = session.user as any;
                 const canManageUsers = permissions.includes("users.manage");
                 const userId = typeof user?.id === "string" ? user.id : null;
-                const assignedBranches =
-                    userId
-                        ? await prisma.user.findUnique({
-                              where: { id: userId },
-                              select: { branchId: true, branches: { select: { branchId: true } } },
-                          })
-                        : null;
 
-                // Avoid JWT-cached `branchIds` (NextAuth JWT won't auto-refresh on permission/branch changes)
-                const assignedBranchIds: string[] =
-                    assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
-                const primaryBranchId =
-                    typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
+                let allowed: string[] = [];
+                if (isBypassOnlyUser(user?.email)) {
+                    const bid = await getBypassBranchId();
+                    allowed = bid ? [bid] : [];
+                } else {
+                    const assignedBranches =
+                        userId
+                            ? await prisma.user.findUnique({
+                                  where: { id: userId },
+                                  select: { branchId: true, branches: { select: { branchId: true } } },
+                              })
+                            : null;
 
-                const allowed =
-                    assignedBranchIds.length > 0
-                        ? Array.from(new Set(assignedBranchIds))
-                        : primaryBranchId
-                          ? [primaryBranchId]
-                          : [];
+                    // Avoid JWT-cached `branchIds` (NextAuth JWT won't auto-refresh on permission/branch changes)
+                    const assignedBranchIds: string[] =
+                        assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
+                    const primaryBranchId =
+                        typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
+
+                    allowed =
+                        assignedBranchIds.length > 0
+                            ? Array.from(new Set(assignedBranchIds))
+                            : primaryBranchId
+                              ? [primaryBranchId]
+                              : [];
+                }
 
                 const requestedBranchId =
                     req.nextUrl.searchParams.get("branchId")?.trim() || undefined;
@@ -60,16 +68,24 @@ export async function GET(req: NextRequest) {
                     return NextResponse.json([]);
                 }
 
+                const bypassOnly = isBypassOnlyUser(user?.email);
+                if (bypassOnly && effectiveBranchIds.length === 0) {
+                    return NextResponse.json([]);
+                }
+
                 // Admins (users.manage): filter by ?branchId= when provided so the RO form matches the selected branch;
                 // with no branchId, return all advisor options (e.g. full-page RO form before branch is chosen).
+                // Bypass-only users always see advisors for their branch only.
                 const advisors = await prisma.dropdownOption.findMany({
                     where: {
                         groupKey: "service_advisor",
-                        ...(canManageUsers
-                            ? requestedBranchId
-                                ? { branchId: requestedBranchId }
-                                : {}
-                            : { branchId: { in: effectiveBranchIds } }),
+                        ...(bypassOnly
+                            ? { branchId: { in: effectiveBranchIds } }
+                            : canManageUsers
+                              ? requestedBranchId
+                                  ? { branchId: requestedBranchId }
+                                  : {}
+                              : { branchId: { in: effectiveBranchIds } }),
                     },
                     orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
                 });

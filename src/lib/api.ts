@@ -1,9 +1,36 @@
 /** Lightweight API client using fetch (no axios bundle). */
 
 type ApiError = { error?: string; message?: string };
+type ApiGetOptions = {
+  cacheMs?: number;
+  signal?: AbortSignal;
+};
+
+type CacheEntry = {
+  expiresAt: number;
+  data: unknown;
+};
+
+const getCache = new Map<string, CacheEntry>();
+const inflightGets = new Map<string, Promise<unknown>>();
+
+function invalidateApiCache(url: string) {
+  const [path] = url.split("?");
+  const parentPath = path.split("/").slice(0, -1).join("/");
+  for (const key of getCache.keys()) {
+    if (
+      key === url ||
+      key === path ||
+      key.startsWith(`${path}?`) ||
+      (parentPath && (key === parentPath || key.startsWith(`${parentPath}?`)))
+    ) {
+      getCache.delete(key);
+    }
+  }
+}
 
 async function handleRes<T>(res: Response): Promise<T> {
-  const data = await res.json().catch(() => ({}));
+  const data = res.status === 204 ? {} : await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && typeof window !== "undefined") {
       window.location.href = "/login";
@@ -14,9 +41,36 @@ async function handleRes<T>(res: Response): Promise<T> {
   return data as T;
 }
 
-export async function apiGet<T = unknown>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: "include", cache: "no-store" });
-  return handleRes<T>(res);
+export async function apiGet<T = unknown>(url: string, options: ApiGetOptions = {}): Promise<T> {
+  const { cacheMs = 0, signal } = options;
+  const now = Date.now();
+
+  if (cacheMs > 0) {
+    const cached = getCache.get(url);
+    if (cached && cached.expiresAt > now) return cached.data as T;
+
+    const inflight = inflightGets.get(url);
+    if (inflight) return inflight as Promise<T>;
+  }
+
+  const request = fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+    signal,
+  })
+    .then((res) => handleRes<T>(res))
+    .then((data) => {
+      if (cacheMs > 0) {
+        getCache.set(url, { data, expiresAt: Date.now() + cacheMs });
+      }
+      return data;
+    })
+    .finally(() => {
+      inflightGets.delete(url);
+    });
+
+  if (cacheMs > 0) inflightGets.set(url, request);
+  return request;
 }
 
 export async function apiPost<T = unknown>(url: string, body?: unknown, headers?: HeadersInit): Promise<T> {
@@ -27,7 +81,9 @@ export async function apiPost<T = unknown>(url: string, body?: unknown, headers?
     headers: isForm ? undefined : { "Content-Type": "application/json", ...headers },
     body: isForm ? (body as FormData) : body ? JSON.stringify(body) : undefined,
   });
-  return handleRes<T>(res);
+  const data = await handleRes<T>(res);
+  invalidateApiCache(url);
+  return data;
 }
 
 export async function apiPatch<T = unknown>(url: string, body: unknown): Promise<T> {
@@ -37,10 +93,14 @@ export async function apiPatch<T = unknown>(url: string, body: unknown): Promise
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return handleRes<T>(res);
+  const data = await handleRes<T>(res);
+  invalidateApiCache(url);
+  return data;
 }
 
 export async function apiDelete<T = unknown>(url: string): Promise<T> {
   const res = await fetch(url, { method: "DELETE", credentials: "include" });
-  return handleRes<T>(res);
+  const data = await handleRes<T>(res);
+  invalidateApiCache(url);
+  return data;
 }

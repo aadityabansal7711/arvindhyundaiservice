@@ -5,6 +5,7 @@ import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import supabaseAdmin from "@/lib/supabase-admin";
+import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
 // dynamic behavior so Next does not cache stale responses.
@@ -241,14 +242,36 @@ export async function GET(request: NextRequest) {
   const canViewAllBranches = permissions.includes("branches.view_all") || permissions.includes("users.manage");
   const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
   const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
-  const allowedBranchIds =
+  let allowedBranchIds: string[] | undefined =
     canViewAllBranches ? undefined : (assignedBranchIds.length > 0 ? assignedBranchIds : (primaryBranchId ? [primaryBranchId] : []));
+  if (isBypassOnlyUser(user?.email)) {
+    const bid = await getBypassBranchId();
+    allowedBranchIds = bid ? [bid] : [];
+  }
+
+  const restrictByBranch = isBypassOnlyUser(user?.email) || !canViewAllBranches;
   const effectiveBranchIds =
-    canViewAllBranches
+    !restrictByBranch
       ? undefined
-      : branchIdParam && allowedBranchIds?.includes(branchIdParam)
+      : branchIdParam && allowedBranchIds && allowedBranchIds.includes(branchIdParam)
         ? [branchIdParam]
-        : allowedBranchIds;
+        : allowedBranchIds ?? [];
+
+  if (isBypassOnlyUser(user?.email) && effectiveBranchIds !== undefined && effectiveBranchIds.length === 0) {
+    if (countsOnly) {
+      const stages: Record<string, number> = {};
+      for (const s of [
+        "Document Pending", "Claim Intimation Pending", "Survey Pending", "Approval Pending",
+        "Approval Received", "PNA", "Dismantle", "Mechanical", "Cutting", "Denting",
+        "Painting", "Fitting", "Ready for Pre-Invoice", "Billed but Not Ready",
+        "DO Awaited", "Customer Awaited", "Total Loss / Disputed", "Delivered",
+      ] as StatusSection[]) {
+        stages[s] = 0;
+      }
+      return NextResponse.json({ all: 0, stages });
+    }
+    return NextResponse.json([]);
+  }
 
   if (countsOnly) {
     const cacheKey = `countsOnly:openOnly=${openOnly ? 1 : 0};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
@@ -513,7 +536,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  const body = (await request.json()) as Record<string, any>;
+  const userEmail = (session.user as any)?.email as string | undefined;
+  if (isBypassOnlyUser(userEmail)) {
+    const bid = await getBypassBranchId();
+    if (!bid) {
+      return NextResponse.json({ error: "Bypass branch is not configured" }, { status: 400 });
+    }
+    const reqB = body?.branch_id as string | null | undefined;
+    if (reqB && String(reqB).trim() && String(reqB).trim() !== bid) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    body.branch_id = bid;
+  }
+
   const id = (body?.id ?? body?.ro_no ?? body?.roNo) as string | undefined;
   if (!id || !String(id).trim()) {
     return NextResponse.json(

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
+import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+
 export async function GET(_req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) {
@@ -9,6 +12,17 @@ export async function GET(_req: NextRequest) {
     }
 
     try {
+        const bypassOnly = isBypassOnlyUser((session.user as any)?.email);
+        const bypassBid = bypassOnly ? await getBypassBranchId() : null;
+        const roBranchWhere: Prisma.RepairOrderWhereInput | undefined = !bypassOnly
+            ? undefined
+            : bypassBid
+              ? { branchId: bypassBid }
+              : { branchId: "__none__" };
+
+        const mergeRo = (base: Prisma.RepairOrderWhereInput): Prisma.RepairOrderWhereInput =>
+            roBranchWhere ? { AND: [base, roBranchWhere] } : base;
+
         const now = new Date();
         const agingRanges = [
             { label: "0-3 Days", minDays: 0, maxDays: 3 },
@@ -28,29 +42,41 @@ export async function GET(_req: NextRequest) {
             ...agingCounts
         ] = await Promise.all([
             prisma.repairOrder.count({
-                where: { NOT: { currentStatus: { in: ["DELIVERED", "CLOSED"] } } }
+                where: mergeRo({ NOT: { currentStatus: { in: ["DELIVERED", "CLOSED"] } } }),
             }),
             prisma.repairOrder.count({
-                where: { currentStatus: { in: ["APPROVAL_PENDING", "PENDING_APPROVAL"] } }
+                where: mergeRo({ currentStatus: { in: ["APPROVAL_PENDING", "PENDING_APPROVAL"] } }),
             }),
             prisma.repairOrder.count({
-                where: { currentStatus: "READY_FOR_DELIVERY" }
+                where: mergeRo({ currentStatus: "READY_FOR_DELIVERY" }),
             }),
-            prisma.$queryRaw<[{ avg_tat: number | null }]>`
-                SELECT AVG(EXTRACT(EPOCH FROM ("vehicleOutDate" - "vehicleInDate")) / 86400) AS avg_tat
-                FROM "RepairOrder"
-                WHERE "vehicleOutDate" IS NOT NULL
-            `,
+            bypassBid
+                ? prisma.$queryRaw<[{ avg_tat: number | null }]>`
+                    SELECT AVG(EXTRACT(EPOCH FROM ("vehicleOutDate" - "vehicleInDate")) / 86400) AS avg_tat
+                    FROM "RepairOrder"
+                    WHERE "vehicleOutDate" IS NOT NULL AND "branchId" = ${bypassBid}
+                `
+                : bypassOnly && !bypassBid
+                  ? Promise.resolve([{ avg_tat: null }])
+                  : prisma.$queryRaw<[{ avg_tat: number | null }]>`
+                    SELECT AVG(EXTRACT(EPOCH FROM ("vehicleOutDate" - "vehicleInDate")) / 86400) AS avg_tat
+                    FROM "RepairOrder"
+                    WHERE "vehicleOutDate" IS NOT NULL
+                `,
             prisma.workNote.findMany({
                 take: 5,
                 orderBy: { noteDate: "desc" },
+                where: roBranchWhere ? { repairOrder: { is: roBranchWhere } } : undefined,
                 include: {
                     repairOrder: { select: { roNo: true } },
                     createdBy: { select: { name: true, role: { select: { name: true } } } }
                 }
             }),
             prisma.billing.count({
-                where: { difference: { gt: 10000 } }
+                where: {
+                    difference: { gt: 10000 },
+                    ...(roBranchWhere ? { repairOrder: { is: roBranchWhere } } : {}),
+                },
             }),
             // Aging: open ROs only, by days in shop (vehicleInDate)
             ...agingRanges.map(({ minDays, maxDays }) => {
@@ -61,11 +87,11 @@ export async function GET(_req: NextRequest) {
                 rangeEnd.setDate(rangeEnd.getDate() - minDays);
                 rangeEnd.setHours(23, 59, 59, 999);
                 return prisma.repairOrder.count({
-                    where: {
+                    where: mergeRo({
                         vehicleOutDate: null,
                         NOT: { currentStatus: { in: ["DELIVERED", "CLOSED"] } },
                         vehicleInDate: maxDays >= 999 ? { lte: rangeEnd } : { gte: rangeStart, lte: rangeEnd }
-                    }
+                    }),
                 });
             })
         ]);

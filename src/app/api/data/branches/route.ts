@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -10,6 +11,17 @@ export async function GET() {
     }
     try {
         const user = session.user as any;
+        if (isBypassOnlyUser(user?.email)) {
+            const bid = await getBypassBranchId();
+            if (!bid) {
+                return NextResponse.json([]);
+            }
+            const branches = await prisma.branch.findMany({
+                where: { id: bid },
+                orderBy: { name: "asc" },
+            });
+            return NextResponse.json(branches);
+        }
         const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
         const canViewAll = permissions.includes("branches.view_all") || permissions.includes("users.manage");
 

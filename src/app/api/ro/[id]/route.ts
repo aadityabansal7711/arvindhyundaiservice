@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { bypassUserDeniesBranchAccess } from "@/lib/bypass-only-user";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     const session = await getServerSession(authOptions);
@@ -28,6 +29,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         });
 
         if (!ro) {
+            return NextResponse.json({ error: "RO Not Found" }, { status: 404 });
+        }
+
+        if (await bypassUserDeniesBranchAccess((session.user as any)?.email, ro.branchId)) {
             return NextResponse.json({ error: "RO Not Found" }, { status: 404 });
         }
 
@@ -93,7 +98,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             return NextResponse.json({ error: "RO Not Found" }, { status: 404 });
         }
 
+        if (await bypassUserDeniesBranchAccess((session.user as any)?.email, ro.branchId)) {
+            return NextResponse.json({ error: "RO Not Found" }, { status: 404 });
+        }
+
         const body = await req.json();
+
+        if (body.branchId !== undefined) {
+            const nextBranch =
+                body.branchId && String(body.branchId).trim() ? String(body.branchId).trim() : null;
+            if (await bypassUserDeniesBranchAccess((session.user as any)?.email, nextBranch)) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+        }
 
         const roUpdates: Record<string, unknown> = {};
 

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { getBranchScopeForSessionUser, getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
 export async function POST(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     try {
         const body = await req.json();
-        const {
+        let {
             roNo,
             vehicleId,
             branchId,
@@ -41,6 +42,22 @@ export async function POST(req: NextRequest) {
                 { error: "At least one photo is required to open a new RO" },
                 { status: 400 }
             );
+        }
+
+        const email = (session.user as any)?.email as string | undefined;
+        if (isBypassOnlyUser(email)) {
+            const bid = await getBypassBranchId();
+            if (!bid) {
+                return NextResponse.json(
+                    { error: "Bypass branch is not configured in the system" },
+                    { status: 400 }
+                );
+            }
+            const reqBranch = branchId && String(branchId).trim() ? String(branchId).trim() : null;
+            if (reqBranch && reqBranch !== bid) {
+                return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+            branchId = bid;
         }
 
         const vehicle = await prisma.vehicle.findUnique({
@@ -142,31 +159,20 @@ export async function GET(req: NextRequest) {
         const where: Prisma.RepairOrderWhereInput = {};
 
         const user = session.user as any;
-        const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-        const canViewAllBranches = permissions.includes("branches.view_all") || permissions.includes("users.manage");
-        const canViewMultiBranches = permissions.includes("branches.view_multi");
-        const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
-        const userBranchId = user?.branchId as string | undefined;
+        const scope = await getBranchScopeForSessionUser(user);
 
         if (status) {
             where.currentStatus = status;
         }
 
-        const allowedBranchIds = canViewAllBranches
-            ? null
-            : (canViewMultiBranches
-                ? (assignedBranchIds.length > 0 ? assignedBranchIds : (userBranchId ? [userBranchId] : []))
-                : (userBranchId ? [userBranchId] : []));
-
-        if (!canViewAllBranches) {
+        if (scope.kind === "ids") {
             const requested = branchIdParam?.trim();
-            if (requested && allowedBranchIds?.includes(requested)) {
-                where.branchId = requested;
-            } else if (allowedBranchIds && allowedBranchIds.length > 0) {
-                where.branchId = { in: allowedBranchIds };
-            } else {
-                // No allowed branches → return empty
+            if (scope.ids.length === 0) {
                 where.branchId = "__none__";
+            } else if (requested && scope.ids.includes(requested)) {
+                where.branchId = requested;
+            } else {
+                where.branchId = { in: scope.ids };
             }
         } else if (branchIdParam?.trim()) {
             where.branchId = branchIdParam.trim();

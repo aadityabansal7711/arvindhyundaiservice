@@ -14,7 +14,9 @@ import {
     Car,
     Database,
     KanbanSquare,
-    PackageCheck
+    PackageCheck,
+    PanelLeftClose,
+    PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
@@ -69,6 +71,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         pathname.startsWith("/bodyshop") &&
         !pathname.startsWith("/bodyshop/delivered") &&
         !isSidebarCollapsed;
+    const pageTitle =
+        pathname.startsWith("/bodyshop/delivered")
+            ? "Delivered Vehicles"
+            : pathname.startsWith("/bodyshop")
+                ? "Bodyshop Operations"
+                : pathname.startsWith("/admin/users")
+                    ? "User Management"
+                    : pathname.startsWith("/data")
+                        ? "Data Library"
+                        : "Service Operations";
     const isSidebarItemActive = (href: string) => {
         if (href === "/bodyshop") {
             // `/bodyshop/delivered` should not mark "Bodyshop Board" as active.
@@ -86,7 +98,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }, [session, isManager, pathname, router]);
 
     return (
-        <div className="min-h-screen bg-[var(--background)] flex">
+        <div className="min-h-screen bg-[var(--background)] flex text-slate-950">
             {/* Mobile Menu Overlay */}
             {isMobileMenuOpen && (
                 <div
@@ -98,7 +110,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {/* Sidebar - dark theme */}
             <aside
                 className={cn(
-                    "bg-[var(--sidebar-bg)] z-50 transition-all duration-300 flex flex-col fixed lg:static inset-y-0 left-0 shadow-xl lg:shadow-none pt-[env(safe-area-inset-top)]",
+                    "bg-[var(--sidebar-bg)] z-50 transition-all duration-300 flex flex-col fixed lg:static inset-y-0 left-0 shadow-2xl lg:shadow-none pt-[env(safe-area-inset-top)] overflow-hidden",
                     {
                         "w-[min(20rem,85vw)] lg:w-20": isSidebarCollapsed,
                         "w-[min(20rem,85vw)] lg:w-64": !isSidebarCollapsed,
@@ -106,13 +118,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
                 )}
             >
-                <div className="p-3 sm:p-4 flex items-center justify-between min-h-14 sm:h-16 border-b border-white/10">
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(14,165,233,0.28),transparent_17rem),linear-gradient(180deg,rgba(255,255,255,0.07),transparent_18rem)]" />
+                <div className="relative p-3 sm:p-4 flex items-center justify-between min-h-14 sm:h-16 border-b border-white/10">
                     <div className={cn("flex items-center gap-3 overflow-hidden", isSidebarCollapsed && "lg:justify-center w-full")}>
-                        <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30 ring-2 ring-white/10">
+                        <div className="w-10 h-10 bg-sky-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/30 ring-1 ring-white/20">
                             <Car className="text-white w-5 h-5" />
                         </div>
                         {!isSidebarCollapsed && (
-                            <span className="font-bold text-white truncate text-lg tracking-tight">Arvind Hyundai</span>
+                            <div className="min-w-0">
+                                <span className="block font-bold text-white truncate text-lg tracking-tight">Arvind Hyundai</span>
+                                <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/70">Service Desk</span>
+                            </div>
                         )}
                     </div>
                     <button
@@ -123,7 +139,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     </button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+                <nav className="relative flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
                     {bodyshopItem.map((item) => (
                         <Link
                             key={item.name}
@@ -132,17 +148,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             className={cn(
                                 "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
                                 isSidebarItemActive(item.href)
-                                    ? "bg-white/10 text-white font-medium shadow-inner"
-                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                                    ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
+                                    : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
                             )}
                         >
                             <item.icon className={cn(
                                 "w-5 h-5 shrink-0",
-                                isSidebarItemActive(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                                isSidebarItemActive(item.href) ? "text-sky-300" : "text-slate-500 group-hover:text-slate-300"
                             )} />
                             {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
                             {isSidebarItemActive(item.href) && !isSidebarCollapsed && (
-                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                                <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
                             )}
                         </Link>
                     ))}
@@ -162,15 +178,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                                 "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
                                 showBodyshopStages && "mt-2",
                                 pathname.startsWith(deliveredItem.href)
-                                    ? "bg-white/10 text-white font-medium shadow-inner"
-                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                                    ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
+                                    : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
                             )}
                         >
                             <deliveredItem.icon
                                 className={cn(
                                     "w-5 h-5 shrink-0",
                                     pathname.startsWith(deliveredItem.href)
-                                        ? "text-blue-300"
+                                        ? "text-sky-300"
                                         : "text-slate-500 group-hover:text-slate-300"
                                 )}
                             />
@@ -178,7 +194,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                                 <span className="truncate">{deliveredItem.name}</span>
                             )}
                             {pathname.startsWith(deliveredItem.href) && !isSidebarCollapsed && (
-                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                                <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
                             )}
                         </Link>
                     )}
@@ -190,25 +206,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             className={cn(
                                 "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
                                 isSidebarItemActive(item.href)
-                                    ? "bg-white/10 text-white font-medium shadow-inner"
-                                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                                    ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
+                                    : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
                             )}
                         >
                             <item.icon className={cn(
                                 "w-5 h-5 shrink-0",
-                                isSidebarItemActive(item.href) ? "text-blue-300" : "text-slate-500 group-hover:text-slate-300"
+                                isSidebarItemActive(item.href) ? "text-sky-300" : "text-slate-500 group-hover:text-slate-300"
                             )} />
                             {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
                             {isSidebarItemActive(item.href) && !isSidebarCollapsed && (
-                                <div className="ml-auto w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                                <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
                             )}
                         </Link>
                     ))}
                 </nav>
 
-                <div className="p-4 border-t border-white/10 flex flex-col gap-2">
+                <div className="relative p-4 border-t border-white/10 flex flex-col gap-2">
                     {!isSidebarCollapsed && session?.user && (
-                        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5 mb-1">
+                        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.07] mb-1 ring-1 ring-white/10">
                             <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
                                 <UserIcon className="w-5 h-5 text-slate-300" />
                             </div>
@@ -219,9 +235,25 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         </div>
                     )}
                     <button
+                        type="button"
+                        onClick={() => setIsSidebarCollapsed((value) => !value)}
+                        className={cn(
+                            "hidden lg:flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-white/[0.07] hover:text-white transition-all duration-200",
+                            isSidebarCollapsed && "justify-center"
+                        )}
+                        aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    >
+                        {isSidebarCollapsed ? (
+                            <PanelLeftOpen className="w-5 h-5 shrink-0" />
+                        ) : (
+                            <PanelLeftClose className="w-5 h-5 shrink-0" />
+                        )}
+                        {!isSidebarCollapsed && <span className="font-medium">Collapse</span>}
+                    </button>
+                    <button
                         onClick={() => signOut({ callbackUrl: "/login" })}
                         className={cn(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200",
+                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200",
                             isSidebarCollapsed && "justify-center"
                         )}
                     >
@@ -234,7 +266,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 min-h-screen sm:h-screen overflow-hidden bg-dashboard-pattern">
                 {/* Top Header - touch-friendly on mobile */}
-                <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/80 min-h-14 sm:h-16 flex items-center justify-between px-3 sm:px-4 lg:px-8 flex-shrink-0 shadow-sm safe-top">
+                <header className="bg-white/[0.78] backdrop-blur-xl border-b border-white/80 min-h-14 sm:h-16 flex items-center justify-between px-3 sm:px-4 lg:px-8 flex-shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.04)] safe-top">
                     <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
                         <button
                             type="button"
@@ -244,12 +276,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         >
                             <Menu className="w-6 h-6" />
                         </button>
+                        <div className="hidden sm:block min-w-0">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Workspace</div>
+                            <div className="text-sm font-bold text-slate-900 truncate">{pageTitle}</div>
+                        </div>
                         {pathname !== "/ro/new" && (
                             <div className="relative hidden md:block w-64 lg:w-96 flex-shrink-0">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 <input
                                     placeholder="Search RO, Reg No, Customer..."
-                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400/50 focus:bg-white transition-all shadow-sm"
+                                    className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white shadow-sm"
                                 />
                             </div>
                         )}
