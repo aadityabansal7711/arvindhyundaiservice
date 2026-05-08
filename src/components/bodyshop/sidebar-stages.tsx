@@ -103,19 +103,19 @@ export function SidebarStages() {
   const allCount = counts?.all ?? 0;
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.06] shadow-inner overflow-hidden">
-      <div className="px-4 py-3 border-b border-white/10">
+    <div className="flex h-full min-h-0 flex-col rounded-xl border border-white/10 bg-white/[0.06] shadow-inner overflow-hidden">
+      <div className="px-3 py-2 border-b border-white/10">
         <div className="flex items-center gap-2 text-sm font-semibold text-white">
           <LayoutGrid className="w-4 h-4 text-sky-300 shrink-0" />
           Stages
         </div>
       </div>
-      <div className="p-2 max-h-[min(60vh,400px)] overflow-y-auto custom-scrollbar">
+      <div className="min-h-0 flex-1 overflow-y-scroll overscroll-contain p-1.5 custom-scrollbar">
         <button
           type="button"
           onClick={() => selectStage("All")}
           className={
-            "w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors " +
+            "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[13px] leading-5 transition-colors " +
             (activeStage === "All"
               ? "bg-sky-400/15 text-white font-semibold ring-1 ring-sky-300/20"
               : "hover:bg-white/[0.07] text-slate-300")
@@ -131,7 +131,7 @@ export function SidebarStages() {
             {allCount}
           </span>
         </button>
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-0.5 space-y-0">
           {stagesToList.map((s) => {
             const count = counts?.stages[s] ?? 0;
             const isActive = activeStage === s;
@@ -141,7 +141,7 @@ export function SidebarStages() {
                 type="button"
                 onClick={() => selectStage(s)}
                 className={
-                  "w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors " +
+                  "w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[13px] leading-5 transition-colors " +
                   (isActive
                     ? "bg-sky-400/15 text-white font-semibold ring-1 ring-sky-300/20"
                     : "hover:bg-white/[0.07] text-slate-300")

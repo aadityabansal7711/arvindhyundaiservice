@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth-options";
-import prisma from "@/lib/prisma";
-import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { listBodyshopJobs } from "@/lib/bodyshop-repo";
+import { isBypassOnlyUser, getBypassBranchId } from "@/lib/bypass-only-user";
 
 export async function GET(_req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -14,113 +13,47 @@ export async function GET(_req: NextRequest) {
     try {
         const bypassOnly = isBypassOnlyUser((session.user as any)?.email);
         const bypassBid = bypassOnly ? await getBypassBranchId() : null;
-        const roBranchWhere: Prisma.RepairOrderWhereInput | undefined = !bypassOnly
-            ? undefined
-            : bypassBid
-              ? { branchId: bypassBid }
-              : { branchId: "__none__" };
-
-        const mergeRo = (base: Prisma.RepairOrderWhereInput): Prisma.RepairOrderWhereInput =>
-            roBranchWhere ? { AND: [base, roBranchWhere] } : base;
-
-        const now = new Date();
+        const jobs = await listBodyshopJobs({
+            limit: 6000,
+            statusSection: "All",
+            branchIds: bypassOnly ? (bypassBid ? [bypassBid] : []) : undefined,
+        });
+        const openJobs = jobs.filter((job) => job.status_section !== "Delivered");
         const agingRanges = [
             { label: "0-3 Days", minDays: 0, maxDays: 3 },
             { label: "4-7 Days", minDays: 4, maxDays: 7 },
             { label: "8-15 Days", minDays: 8, maxDays: 15 },
             { label: "15+ Days", minDays: 15, maxDays: 999 },
         ];
+        const agingAnalysis = agingRanges.map((range) => {
+            const count = openJobs.filter((job) =>
+                range.maxDays >= 999
+                    ? job.age_days >= range.minDays
+                    : job.age_days >= range.minDays && job.age_days <= range.maxDays
+            ).length;
+            return {
+                range: range.label,
+                count,
+                percent: openJobs.length > 0 ? `${((count / openJobs.length) * 100).toFixed(0)}%` : "0%",
+            };
+        });
 
-        // Run all independent DB queries in parallel
-        const [
-            openROsCount,
-            pendingApprovalCount,
-            readyForDeliveryCount,
-            avgTatResult,
-            recentNotes,
-            billingAlertsCount,
-            ...agingCounts
-        ] = await Promise.all([
-            prisma.repairOrder.count({
-                where: mergeRo({ NOT: { currentStatus: { in: ["DELIVERED", "CLOSED"] } } }),
-            }),
-            prisma.repairOrder.count({
-                where: mergeRo({ currentStatus: { in: ["APPROVAL_PENDING", "PENDING_APPROVAL"] } }),
-            }),
-            prisma.repairOrder.count({
-                where: mergeRo({ currentStatus: "READY_FOR_DELIVERY" }),
-            }),
-            bypassBid
-                ? prisma.$queryRaw<[{ avg_tat: number | null }]>`
-                    SELECT AVG(EXTRACT(EPOCH FROM ("vehicleOutDate" - "vehicleInDate")) / 86400) AS avg_tat
-                    FROM "RepairOrder"
-                    WHERE "vehicleOutDate" IS NOT NULL AND "branchId" = ${bypassBid}
-                `
-                : bypassOnly && !bypassBid
-                  ? Promise.resolve([{ avg_tat: null }])
-                  : prisma.$queryRaw<[{ avg_tat: number | null }]>`
-                    SELECT AVG(EXTRACT(EPOCH FROM ("vehicleOutDate" - "vehicleInDate")) / 86400) AS avg_tat
-                    FROM "RepairOrder"
-                    WHERE "vehicleOutDate" IS NOT NULL
-                `,
-            prisma.workNote.findMany({
-                take: 5,
-                orderBy: { noteDate: "desc" },
-                where: roBranchWhere ? { repairOrder: { is: roBranchWhere } } : undefined,
-                include: {
-                    repairOrder: { select: { roNo: true } },
-                    createdBy: { select: { name: true, role: { select: { name: true } } } }
-                }
-            }),
-            prisma.billing.count({
-                where: {
-                    difference: { gt: 10000 },
-                    ...(roBranchWhere ? { repairOrder: { is: roBranchWhere } } : {}),
-                },
-            }),
-            // Aging: open ROs only, by days in shop (vehicleInDate)
-            ...agingRanges.map(({ minDays, maxDays }) => {
-                const rangeStart = new Date(now);
-                rangeStart.setDate(rangeStart.getDate() - maxDays);
-                rangeStart.setHours(0, 0, 0, 0);
-                const rangeEnd = new Date(now);
-                rangeEnd.setDate(rangeEnd.getDate() - minDays);
-                rangeEnd.setHours(23, 59, 59, 999);
-                return prisma.repairOrder.count({
-                    where: mergeRo({
-                        vehicleOutDate: null,
-                        NOT: { currentStatus: { in: ["DELIVERED", "CLOSED"] } },
-                        vehicleInDate: maxDays >= 999 ? { lte: rangeEnd } : { gte: rangeStart, lte: rangeEnd }
-                    }),
-                });
-            })
-        ]);
-
-        const avgTat = Number(avgTatResult[0]?.avg_tat ?? 0);
-
-        const totalOpenForAging = agingCounts.reduce((a, b) => a + b, 0);
-        const agingAnalysis = agingRanges.map((range, i) => ({
-            range: range.label,
-            count: agingCounts[i],
-            percent: totalOpenForAging > 0 ? `${((agingCounts[i] / totalOpenForAging) * 100).toFixed(0)}%` : "0%"
-        }));
+        const deliveredJobs = jobs.filter((job) => job.status_section === "Delivered");
+        const avgTat =
+            deliveredJobs.length > 0
+                ? deliveredJobs.reduce((sum, job) => sum + job.age_days, 0) / deliveredJobs.length
+                : 0;
 
         const res = NextResponse.json({
             stats: [
-                { name: "Open ROs", value: openROsCount.toString(), icon: "ClipboardList", color: "bg-blue-600", trend: "+0", trendUp: true },
+                { name: "Open ROs", value: openJobs.length.toString(), icon: "ClipboardList", color: "bg-blue-600", trend: "+0", trendUp: true },
                 { name: "Avg TAT", value: `${avgTat.toFixed(1)} Days`, icon: "Clock", color: "bg-indigo-600", trend: "+0", trendUp: false },
-                { name: "Pending Approval", value: pendingApprovalCount.toString(), icon: "AlertCircle", color: "bg-amber-500", trend: "+0", trendUp: true },
-                { name: "Ready for Delivery", value: readyForDeliveryCount.toString(), icon: "CheckCircle2", color: "bg-emerald-500", trend: "+0", trendUp: true },
+                { name: "Pending Approval", value: jobs.filter((job) => job.status_section.includes("Approval")).length.toString(), icon: "AlertCircle", color: "bg-amber-500", trend: "+0", trendUp: true },
+                { name: "Ready for Delivery", value: jobs.filter((job) => job.status_section === "Ready for Pre-Invoice").length.toString(), icon: "CheckCircle2", color: "bg-emerald-500", trend: "+0", trendUp: true },
             ],
-            recentActivity: recentNotes.map(note => ({
-                id: note.id,
-                text: `RO ${note.repairOrder.roNo}: ${note.noteText}`,
-                user: note.createdBy.name,
-                role: note.createdBy.role.name,
-                time: note.noteDate
-            })),
+            recentActivity: [],
             agingAnalysis,
-            billingAlertsCount
+            billingAlertsCount: 0,
         });
         res.headers.set("Cache-Control", "private, s-maxage=60, stale-while-revalidate=120");
         return res;

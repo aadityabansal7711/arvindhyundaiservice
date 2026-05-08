@@ -47,6 +47,7 @@ function DeliveredPageInner() {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didFetchOnceRef = useRef(false);
   const [photoPreview, setPhotoPreview] = useState<PhotoPreviewState | null>(null);
   const [stageViewOpen, setStageViewOpen] = useState(false);
   const [stageViewLoading, setStageViewLoading] = useState(false);
@@ -65,7 +66,7 @@ function DeliveredPageInner() {
       if (term.trim()) params.set("search", term.trim());
       const data = await apiGet<BodyshopJobWithMeta[]>(
         `/api/bodyshop-jobs?${params.toString()}`,
-        { signal }
+        { cacheMs: term.trim() ? 1_000 : 2_000, signal }
       );
       setJobs(data);
     } catch (err) {
@@ -84,9 +85,11 @@ function DeliveredPageInner() {
 
     const controller = new AbortController();
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const delay = didFetchOnceRef.current ? 180 : 0;
+    didFetchOnceRef.current = true;
     debounceRef.current = setTimeout(() => {
       void fetchJobs(search, controller.signal);
-    }, 250);
+    }, delay);
     return () => {
       controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);

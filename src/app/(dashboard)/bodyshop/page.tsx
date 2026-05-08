@@ -126,6 +126,7 @@ function BodyshopDashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didFetchOnceRef = useRef(false);
 
   const wait = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -230,7 +231,7 @@ function BodyshopDashboardPageInner() {
       });
       const data = await apiGet<BodyshopJobWithMeta[]>(
         `/api/bodyshop-jobs?${params.toString()}`,
-        { signal }
+        { cacheMs: search.trim() ? 1_000 : 2_000, signal }
       );
       setJobs(data);
     } catch (err) {
@@ -244,9 +245,11 @@ function BodyshopDashboardPageInner() {
   useEffect(() => {
     const controller = new AbortController();
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    const delay = didFetchOnceRef.current ? 180 : 0;
+    didFetchOnceRef.current = true;
     debounceRef.current = setTimeout(() => {
       void fetchJobs(controller.signal);
-    }, 250);
+    }, delay);
     return () => {
       controller.abort();
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -585,47 +588,32 @@ function BodyshopDashboardPageInner() {
   return (
     <>
       <div className="space-y-5">
-        <div className="relative overflow-hidden rounded-[1.75rem] bg-slate-950 px-5 py-5 sm:px-6 sm:py-6 shadow-2xl shadow-slate-950/[0.10]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(14,165,233,0.34),transparent_18rem),radial-gradient(circle_at_88%_0%,rgba(245,158,11,0.18),transparent_20rem)]" />
-          <div className="relative flex flex-col sm:flex-row sm:items-end justify-between gap-5">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200/80">
-                Bodyshop Board
-              </div>
-              <h1 className="mt-2 text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                {activeStageLabel}
-              </h1>
-              <p className="text-slate-300 mt-1.5 max-w-2xl">
-                Active vehicles across insurance, workshop, and delivery stages.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsAdding(true);
-                setAddError(null);
-                setAddDebug(null);
-                setAddPhotoFiles([]);
-              }}
-              className="inline-flex min-h-11 items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 text-white text-sm font-bold shadow-lg shadow-sky-500/25 hover:bg-sky-400 active:bg-sky-600 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Record
-            </button>
-          </div>
-        </div>
-
         <div className="space-y-4">
           <section className="space-y-3">
             <div className="panel-surface p-3 sm:p-4 rounded-2xl">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, reg, R/O..."
-                  className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
-                />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by name, reg, R/O..."
+                    className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdding(true);
+                    setAddError(null);
+                    setAddDebug(null);
+                    setAddPhotoFiles([]);
+                  }}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 px-4 py-2 rounded-xl bg-sky-500 text-white text-sm font-bold shadow-sm shadow-sky-500/20 hover:bg-sky-400 active:bg-sky-600 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Record
+                </button>
               </div>
             </div>
 

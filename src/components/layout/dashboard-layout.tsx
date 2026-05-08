@@ -15,6 +15,7 @@ import {
     Database,
     KanbanSquare,
     PackageCheck,
+    BarChart3,
     PanelLeftClose,
     PanelLeftOpen,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
 const sidebarItems = [
     { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
     { name: "Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
+    { name: "Reports", href: "/reports", icon: BarChart3, allowedEmail: "mayank.arvind.bansal@gmail.com" },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -43,6 +45,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
     const userRole = (session?.user as any)?.role as string | undefined;
     const userPermissions = (session?.user as any)?.permissions || [];
+    const userEmail = ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase();
     const isManager = userRole?.toLowerCase() === "manager";
 
     const managerAllowedRoots = new Set([
@@ -51,6 +54,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     ]);
 
     const filteredSidebarItems = sidebarItems.filter((item) => {
+        if ("allowedEmail" in item && item.allowedEmail && userEmail !== item.allowedEmail) {
+            return false;
+        }
         if (item.permission && !userPermissions.includes(item.permission)) {
             return false;
         }
@@ -78,6 +84,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 ? "Bodyshop Operations"
                 : pathname.startsWith("/admin/users")
                     ? "User Management"
+                    : pathname.startsWith("/reports")
+                        ? "Reports"
                     : pathname.startsWith("/data")
                         ? "Data Library"
                         : "Service Operations";
@@ -119,15 +127,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 )}
             >
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(14,165,233,0.28),transparent_17rem),linear-gradient(180deg,rgba(255,255,255,0.07),transparent_18rem)]" />
-                <div className="relative p-3 sm:p-4 flex items-center justify-between min-h-14 sm:h-16 border-b border-white/10">
+                <div className="relative px-3 py-2 flex items-center justify-between min-h-14 border-b border-white/10">
                     <div className={cn("flex items-center gap-3 overflow-hidden", isSidebarCollapsed && "lg:justify-center w-full")}>
-                        <div className="w-10 h-10 bg-sky-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/30 ring-1 ring-white/20">
+                        <div className="w-9 h-9 bg-sky-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-sky-500/30 ring-1 ring-white/20">
                             <Car className="text-white w-5 h-5" />
                         </div>
                         {!isSidebarCollapsed && (
                             <div className="min-w-0">
-                                <span className="block font-bold text-white truncate text-lg tracking-tight">Arvind Hyundai</span>
-                                <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/70">Service Desk</span>
+                                <span className="block font-bold text-white truncate text-base tracking-tight">Arvind Hyundai</span>
+                                <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-200/70">Service Desk</span>
                             </div>
                         )}
                     </div>
@@ -139,14 +147,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     </button>
                 </div>
 
-                <nav className="relative flex-1 overflow-y-auto py-4 px-3 space-y-1 custom-scrollbar">
+                <nav className="relative flex-1 min-h-0 overflow-hidden py-2 px-3 space-y-1">
                     {bodyshopItem.map((item) => (
                         <Link
                             key={item.name}
                             href={item.href}
                             onClick={() => setIsMobileMenuOpen(false)}
                             className={cn(
-                                "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
+                                "flex items-center gap-3 px-3 py-2 min-h-10 rounded-xl transition-all duration-200 group touch-manipulation",
                                 isSidebarItemActive(item.href)
                                     ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
                                     : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
@@ -163,7 +171,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         </Link>
                     ))}
                     {showBodyshopStages && (
-                        <div className="mt-4">
+                        <div className="mt-2 h-[calc(100vh-26rem)] min-h-32 overflow-hidden">
                             <Suspense fallback={<div className="bg-white/10 rounded-xl h-32 animate-pulse" />}>
                                 <SidebarStages />
                             </Suspense>
@@ -175,8 +183,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             href={deliveredItem.href}
                             onClick={() => setIsMobileMenuOpen(false)}
                             className={cn(
-                                "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
-                                showBodyshopStages && "mt-2",
+                                "flex items-center gap-3 px-3 py-2 min-h-10 rounded-xl transition-all duration-200 group touch-manipulation text-sm",
+                                showBodyshopStages && "mt-1",
                                 pathname.startsWith(deliveredItem.href)
                                     ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
                                     : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
@@ -204,7 +212,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             href={item.href}
                             onClick={() => setIsMobileMenuOpen(false)}
                             className={cn(
-                                "flex items-center gap-3 px-3 py-3 min-h-[44px] sm:min-h-0 rounded-xl transition-all duration-200 group touch-manipulation",
+                                "flex items-center gap-3 px-3 py-2 min-h-10 rounded-xl transition-all duration-200 group touch-manipulation text-sm",
                                 isSidebarItemActive(item.href)
                                     ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
                                     : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
@@ -222,11 +230,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     ))}
                 </nav>
 
-                <div className="relative p-4 border-t border-white/10 flex flex-col gap-2">
+                <div className="relative p-3 border-t border-white/10 flex flex-col gap-1.5">
                     {!isSidebarCollapsed && session?.user && (
-                        <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.07] mb-1 ring-1 ring-white/10">
-                            <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
-                                <UserIcon className="w-5 h-5 text-slate-300" />
+                        <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.07] ring-1 ring-white/10">
+                            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
+                                <UserIcon className="w-4 h-4 text-slate-300" />
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold text-white truncate">{session.user.name}</p>
@@ -238,7 +246,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         type="button"
                         onClick={() => setIsSidebarCollapsed((value) => !value)}
                         className={cn(
-                            "hidden lg:flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-white/[0.07] hover:text-white transition-all duration-200",
+                            "hidden lg:flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-400 hover:bg-white/[0.07] hover:text-white transition-all duration-200",
                             isSidebarCollapsed && "justify-center"
                         )}
                         aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -253,7 +261,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     <button
                         onClick={() => signOut({ callbackUrl: "/login" })}
                         className={cn(
-                            "flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200",
+                            "flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-slate-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200",
                             isSidebarCollapsed && "justify-center"
                         )}
                     >

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import { listBodyshopJobs, ensureSeededOnce, addMeta } from "@/lib/bodyshop-repo";
+import { listBodyshopJobs, ensureSeededOnce } from "@/lib/bodyshop-repo";
 import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { authOptions } from "@/lib/auth-options";
-import prisma from "@/lib/prisma";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
@@ -27,6 +26,9 @@ function cacheGet<T>(key: string): T | null {
 }
 function cacheSet<T>(key: string, value: T, ttlMs: number) {
   cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+function cacheClear() {
+  cache.clear();
 }
 
 const STATUS_MAP: Record<string, StatusSection> = {
@@ -101,9 +103,9 @@ function mapROToBodyshopJob(ro: {
   panelsDent: number | null;
   vehicle: { registrationNo: string; model: string; customer: { name: string; mobile: string } };
   advisor: { name: string } | null;
-  insuranceClaim: { insuranceCompany: string; claimNo: string | null; claimIntimationDate: Date | null; hapFlag: boolean | null } | null;
-  survey: { surveyorName: string | null; surveyDate: Date | null; approvalDate: Date | null } | null;
-  billing: { actualLabour: number; billAmount: number } | null;
+  insuranceClaim?: { insuranceCompany: string; claimNo: string | null; claimIntimationDate: Date | null; hapFlag: boolean | null } | null;
+  survey?: { surveyorName: string | null; surveyDate: Date | null; approvalDate: Date | null } | null;
+  billing?: { actualLabour: number; billAmount: number } | null;
 }): BodyshopJob {
   const status_section = mapCurrentStatusToSection(ro.currentStatus);
   const now = new Date().toISOString();
@@ -153,7 +155,7 @@ function mapROToBodyshopJobBoard(ro: {
   currentStatus: string;
   serviceAdvisorName: string | null;
   vehicle: { registrationNo: string; model: string; customer: { name: string; mobile: string } };
-  insuranceClaim: { insuranceCompany: string | null } | null;
+  insuranceClaim?: { insuranceCompany: string | null } | null;
 }): BodyshopJob {
   const status_section = mapCurrentStatusToSection(ro.currentStatus);
   const now = new Date().toISOString();
@@ -194,6 +196,21 @@ function mapROToBodyshopJobBoard(ro: {
     created_at: now,
     updated_at: now,
   };
+}
+
+function isMissingOptionalRelationTable(error: unknown): boolean {
+  const err = error as { code?: string; meta?: { table?: string }; message?: string };
+  const table = err?.meta?.table ?? "";
+  const message = err?.message ?? "";
+  return (
+    err?.code === "P2021" &&
+    (table === "public.InsuranceClaim" ||
+      table === "public.Survey" ||
+      table === "public.Billing" ||
+      message.includes("public.InsuranceClaim") ||
+      message.includes("public.Survey") ||
+      message.includes("public.Billing"))
+  );
 }
 
 function filterJobs(
@@ -319,25 +336,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const openROs = await prisma.repairOrder.findMany({
-      where: {
-        ...(openOnly ? { vehicleOutDate: null } : {}),
-        ...(effectiveBranchIds && effectiveBranchIds.length > 0 ? { branchId: { in: effectiveBranchIds } } : {}),
-      },
-      select: {
-        roNo: true,
-        currentStatus: true,
-      },
-      take: 2000,
-      orderBy: { vehicleInDate: "desc" },
-    });
-
-    for (const ro of openROs) {
-      if (hiddenIds.has(ro.roNo)) continue;
-      if (byRo.has(ro.roNo)) continue;
-      byRo.set(ro.roNo, mapCurrentStatusToSection(ro.currentStatus));
-    }
-
     if (openOnly) {
       for (const status of byRo.values()) {
         if (status === "Delivered") continue;
@@ -357,6 +355,11 @@ export async function GET(request: NextRequest) {
     cacheSet(cacheKey, payload, 5000);
     return NextResponse.json(payload);
   }
+
+  const term = search?.trim();
+  const cacheKey = `list:view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
+  const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
+  if (cached) return NextResponse.json(cached);
 
   await ensureSeededOnce();
 
@@ -383,136 +386,7 @@ export async function GET(request: NextRequest) {
     if (typeof id === "string" && id) hiddenIds.add(id);
   }
 
-  const term = search?.trim();
-  const whereSearch =
-    term && term.length > 0
-      ? {
-          OR: [
-            { roNo: { contains: term, mode: "insensitive" as const } },
-            {
-              vehicle: {
-                is: {
-                  registrationNo: {
-                    contains: term,
-                    mode: "insensitive" as const,
-                  },
-                },
-              },
-            },
-            {
-              vehicle: {
-                is: {
-                  model: { contains: term, mode: "insensitive" as const },
-                },
-              },
-            },
-            {
-              vehicle: {
-                is: {
-                  customer: {
-                    is: {
-                      name: { contains: term, mode: "insensitive" as const },
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        }
-      : undefined;
-
-  const cacheKey = `list:view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
-  // Photos are updated frequently (Move/Add photo append). For `view=board` we
-  // disable this server in-memory cache to avoid returning stale photo counts.
-  const shouldUseCache = view !== "board";
-  if (shouldUseCache) {
-    const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
-    if (cached) return NextResponse.json(cached);
-  }
-
-  const baseWhere = {
-    ...(openOnly ? { vehicleOutDate: null } : {}),
-    ...(whereSearch ?? {}),
-    ...(effectiveBranchIds && effectiveBranchIds.length > 0 ? { branchId: { in: effectiveBranchIds } } : {}),
-  };
-  const take = term ? Math.min(limit * 3, 600) : 500;
-  const orderBy = { vehicleInDate: "desc" as const };
-
-  const supabaseByRo = new Map(supabaseJobs.map((j) => [j.ro_no, j]));
   const merged: BodyshopJobWithMeta[] = [...supabaseJobs];
-
-  if (view === "board") {
-    const openROsBoard = await prisma.repairOrder.findMany({
-      where: baseWhere,
-      select: {
-        roNo: true,
-        branchId: true,
-        vehicleInDate: true,
-        currentStatus: true,
-        serviceAdvisorName: true,
-        vehicle: {
-          select: {
-            registrationNo: true,
-            model: true,
-            customer: { select: { name: true, mobile: true } },
-          },
-        },
-        insuranceClaim: { select: { insuranceCompany: true } },
-      },
-      orderBy,
-      take,
-    });
-
-    for (const ro of openROsBoard) {
-      if (hiddenIds.has(ro.roNo)) continue;
-      if (supabaseByRo.has(ro.roNo)) continue;
-      const job = mapROToBodyshopJobBoard(ro);
-      merged.push(addMeta(job));
-    }
-  } else {
-    const openROsFull = await prisma.repairOrder.findMany({
-      where: baseWhere,
-      select: {
-        roNo: true,
-        branchId: true,
-        vehicleInDate: true,
-        committedDeliveryDate: true,
-        currentStatus: true,
-        serviceAdvisorName: true,
-        panelsNewReplace: true,
-        panelsDent: true,
-        vehicle: {
-          select: {
-            registrationNo: true,
-            model: true,
-            customer: { select: { name: true, mobile: true } },
-          },
-        },
-        advisor: { select: { name: true } },
-        insuranceClaim: {
-          select: {
-            insuranceCompany: true,
-            claimNo: true,
-            claimIntimationDate: true,
-            hapFlag: true,
-          },
-        },
-        survey: {
-          select: { surveyorName: true, surveyDate: true, approvalDate: true },
-        },
-        billing: { select: { actualLabour: true, billAmount: true } },
-      },
-      orderBy,
-      take,
-    });
-
-    for (const ro of openROsFull) {
-      if (hiddenIds.has(ro.roNo)) continue;
-      if (supabaseByRo.has(ro.roNo)) continue;
-      const job = mapROToBodyshopJob(ro);
-      merged.push(addMeta(job));
-    }
-  }
 
   merged.sort((a, b) => {
     const dA = a.ro_date ? new Date(a.ro_date).getTime() : 0;
@@ -524,9 +398,7 @@ export async function GET(request: NextRequest) {
     ? merged.filter((j) => j.status_section !== "Delivered")
     : merged;
   const filtered = filterJobs(openFiltered, search, status, limit);
-  if (shouldUseCache) {
-    cacheSet(cacheKey, filtered, term ? 2000 : 5000);
-  }
+  cacheSet(cacheKey, filtered, term ? 1500 : 5000);
   return NextResponse.json(filtered);
 }
 
@@ -610,6 +482,7 @@ export async function POST(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  cacheClear();
 
   // If this RO was previously deleted, it may be tombstoned in `bodyshop_job_hidden`.
   // Clear it so the detail endpoint doesn't 404 immediately after "re-creating" it.
@@ -621,5 +494,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ success: true });
 }
-
-

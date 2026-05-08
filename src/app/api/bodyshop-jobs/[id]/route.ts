@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import supabaseAdmin from "@/lib/supabase-admin";
-import prisma from "@/lib/prisma";
 import { authOptions } from "@/lib/auth-options";
 import { addMeta } from "@/lib/bodyshop-repo";
 import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
@@ -233,51 +232,7 @@ export async function GET(
     );
   }
 
-  const ro = await prisma.repairOrder.findUnique({
-    where: { roNo: id },
-    select: {
-      roNo: true,
-      branchId: true,
-      vehicleInDate: true,
-      committedDeliveryDate: true,
-      currentStatus: true,
-      serviceAdvisorName: true,
-      panelsNewReplace: true,
-      panelsDent: true,
-      vehicle: {
-        select: {
-          registrationNo: true,
-          model: true,
-          customer: { select: { name: true, mobile: true } },
-        },
-      },
-      advisor: { select: { name: true } },
-      insuranceClaim: {
-        select: {
-          insuranceCompany: true,
-          claimNo: true,
-          claimIntimationDate: true,
-          hapFlag: true,
-        },
-      },
-      survey: { select: { surveyorName: true, surveyDate: true, approvalDate: true } },
-      billing: { select: { actualLabour: true, billAmount: true } },
-    },
-  });
-
-  if (!ro) {
-    return NextResponse.json({ error: "Job not found" }, { status: 404 });
-  }
-
-  if (await bypassUserDeniesBranchAccess((session.user as any)?.email, ro.branchId)) {
-    return NextResponse.json({ error: "Job not found" }, { status: 404 });
-  }
-
-  if (photosOnly) {
-    return NextResponse.json({ id, ro_no: ro.roNo, photos: [] as string[] });
-  }
-
-  return NextResponse.json(addMeta(mapROToBodyshopJob(ro)));
+  return NextResponse.json({ error: "Job not found" }, { status: 404 });
 }
 
 async function loadPatchBaseRow(
@@ -287,39 +242,7 @@ async function loadPatchBaseRow(
   if (existing) {
     return { ...existing };
   }
-  const ro = await prisma.repairOrder.findUnique({
-    where: { roNo: id },
-    select: {
-      roNo: true,
-      branchId: true,
-      vehicleInDate: true,
-      committedDeliveryDate: true,
-      currentStatus: true,
-      serviceAdvisorName: true,
-      panelsNewReplace: true,
-      panelsDent: true,
-      vehicle: {
-        select: {
-          registrationNo: true,
-          model: true,
-          customer: { select: { name: true, mobile: true } },
-        },
-      },
-      advisor: { select: { name: true } },
-      insuranceClaim: {
-        select: {
-          insuranceCompany: true,
-          claimNo: true,
-          claimIntimationDate: true,
-          hapFlag: true,
-        },
-      },
-      survey: { select: { surveyorName: true, surveyDate: true, approvalDate: true } },
-      billing: { select: { actualLabour: true, billAmount: true } },
-    },
-  });
-  if (!ro) return null;
-  return mapROToBodyshopJob(ro) as unknown as Record<string, unknown>;
+  return null;
 }
 
 export async function PATCH(
@@ -552,4 +475,3 @@ export async function DELETE(
 
   return NextResponse.json({ success: true });
 }
-

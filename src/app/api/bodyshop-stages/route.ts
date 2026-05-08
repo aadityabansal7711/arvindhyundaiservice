@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
-import prisma from "@/lib/prisma";
 import { bypassUserDeniesBranchAccess, isBypassOnlyUser } from "@/lib/bypass-only-user";
 
 const STAGE_TABLE = "bodyshop_job_stages";
+const JOB_TABLE = "bodyshop_jobs";
 const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
 
 function isGmUser(email: string | null | undefined) {
@@ -30,13 +30,14 @@ export async function GET(request: NextRequest) {
 
   const userEmail = (session.user as any)?.email as string | undefined;
   if (isBypassOnlyUser(userEmail)) {
-    const roForJob = await prisma.repairOrder.findFirst({
-      where: { OR: [{ roNo: jobId }, { id: jobId }] },
-      select: { branchId: true },
-    });
+    const { data: job } = await supabaseAdmin
+      .from(JOB_TABLE)
+      .select("branch_id")
+      .or(`id.eq.${jobId},ro_no.eq.${jobId}`)
+      .maybeSingle();
     if (
-      !roForJob ||
-      (await bypassUserDeniesBranchAccess(userEmail, roForJob.branchId))
+      !job ||
+      (await bypassUserDeniesBranchAccess(userEmail, (job as any).branch_id ?? null))
     ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -78,4 +79,3 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(safeData);
 }
-
