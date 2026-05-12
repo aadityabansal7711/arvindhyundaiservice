@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useState, useEffect, ReactNode } from "react";
+import { Suspense, useState, useEffect, useRef, ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
     Users,
@@ -15,7 +15,6 @@ import {
     Database,
     KanbanSquare,
     PackageCheck,
-    BarChart3,
     PanelLeftClose,
     PanelLeftOpen,
 } from "lucide-react";
@@ -25,7 +24,6 @@ import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
 const sidebarItems = [
     { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
     { name: "Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
-    { name: "Reports", href: "/reports", icon: BarChart3, allowedEmail: "mayank.arvind.bansal@gmail.com" },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -35,6 +33,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const pathname = usePathname();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const urlQ = searchParams.get("q") ?? "";
+    const [headerSearch, setHeaderSearch] = useState(urlQ);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        setHeaderSearch(urlQ);
+    }, [urlQ]);
+    const onHeaderSearchChange = (value: string) => {
+        setHeaderSearch(value);
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(() => {
+            const params = new URLSearchParams(searchParams.toString());
+            if (value.trim()) params.set("q", value);
+            else params.delete("q");
+            const qs = params.toString();
+            const onBodyshop = pathname.startsWith("/bodyshop") && !pathname.startsWith("/bodyshop/delivered");
+            const target = onBodyshop ? `${pathname}${qs ? `?${qs}` : ""}` : `/bodyshop${qs ? `?${qs}` : ""}`;
+            router.replace(target, { scroll: false });
+        }, 200);
+    };
     const { data: session } = useSession();
 
     useEffect(() => {
@@ -45,7 +63,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
     const userRole = (session?.user as any)?.role as string | undefined;
     const userPermissions = (session?.user as any)?.permissions || [];
-    const userEmail = ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase();
     const isManager = userRole?.toLowerCase() === "manager";
 
     const managerAllowedRoots = new Set([
@@ -54,9 +71,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     ]);
 
     const filteredSidebarItems = sidebarItems.filter((item) => {
-        if ("allowedEmail" in item && item.allowedEmail && userEmail !== item.allowedEmail) {
-            return false;
-        }
         if (item.permission && !userPermissions.includes(item.permission)) {
             return false;
         }
@@ -84,8 +98,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 ? "Bodyshop Operations"
                 : pathname.startsWith("/admin/users")
                     ? "User Management"
-                    : pathname.startsWith("/reports")
-                        ? "Reports"
                     : pathname.startsWith("/data")
                         ? "Data Library"
                         : "Service Operations";
@@ -293,6 +305,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 <input
                                     placeholder="Search RO, Reg No, Customer..."
+                                    value={headerSearch}
+                                    onChange={(e) => onHeaderSearchChange(e.target.value)}
                                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white shadow-sm"
                                 />
                             </div>

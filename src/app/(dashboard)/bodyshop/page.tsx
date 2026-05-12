@@ -163,17 +163,27 @@ function BodyshopDashboardPageInner() {
     return `${yyyy}-${mm}-${dd}T${HH}:${MM}`;
   };
 
+  // Branches are needed for the table (branch name lookup). Cache for 5 min — they rarely change.
   useEffect(() => {
-    apiGet<DropdownOption[]>("/api/data/options?group=insurance_company", { cacheMs: 60_000 })
-      .then(setInsuranceOptions)
-      .catch(() => setInsuranceOptions([]));
-    apiGet<DropdownOption[]>("/api/data/options?group=model", { cacheMs: 60_000 })
-      .then(setModelOptions)
-      .catch(() => setModelOptions([]));
-    apiGet<Branch[]>("/api/data/branches", { cacheMs: 60_000 })
+    apiGet<Branch[]>("/api/data/branches", { cacheMs: 300_000 })
       .then(setBranches)
       .catch(() => setBranches([]));
   }, []);
+
+  // Insurance/model dropdowns are only used inside the Add modal — fetch lazily on first open.
+  useEffect(() => {
+    if (!isAdding) return;
+    if (insuranceOptions.length === 0) {
+      apiGet<DropdownOption[]>("/api/data/options?group=insurance_company", { cacheMs: 300_000 })
+        .then(setInsuranceOptions)
+        .catch(() => setInsuranceOptions([]));
+    }
+    if (modelOptions.length === 0) {
+      apiGet<DropdownOption[]>("/api/data/options?group=model", { cacheMs: 300_000 })
+        .then(setModelOptions)
+        .catch(() => setModelOptions([]));
+    }
+  }, [isAdding, insuranceOptions.length, modelOptions.length]);
 
   useEffect(() => {
     if (branchLocked && userBranchId) {
@@ -193,7 +203,7 @@ function BodyshopDashboardPageInner() {
       `/api/data/options?group=service_advisor&branchId=${encodeURIComponent(
         effectiveBranchId
       )}`,
-      { cacheMs: 60_000 }
+      { cacheMs: 300_000 }
     )
       .then((opts) => {
         setServiceAdvisorOptions(opts);
@@ -220,18 +230,24 @@ function BodyshopDashboardPageInner() {
     }
   }, [searchParams]);
 
+  // Sync search input with global header `?q=` param.
+  useEffect(() => {
+    const q = searchParams.get("q") ?? "";
+    setSearch((prev) => (prev === q ? prev : q));
+  }, [searchParams]);
+
   const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
         search,
-        limit: "500",
+        limit: "250",
         openOnly: "1",
         view: "board",
       });
       const data = await apiGet<BodyshopJobWithMeta[]>(
         `/api/bodyshop-jobs?${params.toString()}`,
-        { cacheMs: search.trim() ? 1_000 : 2_000, signal }
+        { cacheMs: search.trim() ? 3_000 : 15_000, signal }
       );
       setJobs(data);
     } catch (err) {
@@ -507,6 +523,15 @@ function BodyshopDashboardPageInner() {
     const inputerRemark = moveForm.inputer_remark.trim();
     if (!inputerRemark) {
       setMoveError("Please enter an inputer remark.");
+      return;
+    }
+
+    const photosRequired =
+      moveJob.status_section === "Approval Pending" &&
+      (moveToStatus === "Approval Received" ||
+        moveToStatus === "Total Loss / Disputed");
+    if (photosRequired && movePhotoFiles.length === 0) {
+      setMoveError("Please add at least one photo to proceed.");
       return;
     }
 
@@ -1072,7 +1097,16 @@ function BodyshopDashboardPageInner() {
 
               <div className="space-y-3">
                 <label className="block text-xs font-bold text-black uppercase tracking-widest">
-                  Photos <span className="text-slate-400 normal-case tracking-normal font-medium">(optional)</span>
+                  Photos{" "}
+                  {moveJob?.status_section === "Approval Pending" &&
+                  (moveToStatus === "Approval Received" ||
+                    moveToStatus === "Total Loss / Disputed") ? (
+                    <span className="text-rose-500">*</span>
+                  ) : (
+                    <span className="text-slate-400 normal-case tracking-normal font-medium">
+                      (optional)
+                    </span>
+                  )}
                 </label>
                 <input
                   ref={movePhotoInputRef}

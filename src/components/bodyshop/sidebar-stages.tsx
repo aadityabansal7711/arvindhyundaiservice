@@ -26,7 +26,7 @@ export function SidebarStages() {
     let inFlight = false;
     let lastFetchAt = 0;
     const fetchCounts = () =>
-      apiGet<CountsResponse>("/api/bodyshop-jobs?openOnly=1&countsOnly=1")
+      apiGet<CountsResponse>("/api/bodyshop-jobs?openOnly=1&countsOnly=1", { cacheMs: 15_000 })
         .then((data) => {
           if (!cancelled) setCounts(data);
         })

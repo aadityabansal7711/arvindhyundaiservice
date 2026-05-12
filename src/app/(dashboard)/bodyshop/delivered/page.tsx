@@ -66,7 +66,7 @@ function DeliveredPageInner() {
       if (term.trim()) params.set("search", term.trim());
       const data = await apiGet<BodyshopJobWithMeta[]>(
         `/api/bodyshop-jobs?${params.toString()}`,
-        { cacheMs: term.trim() ? 1_000 : 2_000, signal }
+        { cacheMs: term.trim() ? 3_000 : 15_000, signal }
       );
       setJobs(data);
     } catch (err) {
@@ -101,7 +101,7 @@ function DeliveredPageInner() {
     if (!session) return;
     if (!isAdmin) return;
 
-    apiGet<Branch[]>("/api/data/branches", { cacheMs: 60_000 })
+    apiGet<Branch[]>("/api/data/branches", { cacheMs: 300_000 })
       .then(setBranches)
       .catch(() => setBranches([]));
   }, [session, status, isAdmin]);

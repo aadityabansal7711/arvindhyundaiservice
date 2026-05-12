@@ -352,7 +352,7 @@ export async function GET(request: NextRequest) {
       : byRo.size;
 
     const payload = { all, stages };
-    cacheSet(cacheKey, payload, 5000);
+    cacheSet(cacheKey, payload, 30000);
     return NextResponse.json(payload);
   }
 
@@ -398,7 +398,7 @@ export async function GET(request: NextRequest) {
     ? merged.filter((j) => j.status_section !== "Delivered")
     : merged;
   const filtered = filterJobs(openFiltered, search, status, limit);
-  cacheSet(cacheKey, filtered, term ? 1500 : 5000);
+  cacheSet(cacheKey, filtered, term ? 3000 : 30000);
   return NextResponse.json(filtered);
 }
 

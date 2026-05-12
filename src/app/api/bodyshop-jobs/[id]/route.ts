@@ -63,6 +63,18 @@ const STATUS_MAP: Record<string, StatusSection> = {
   Delivered: "Delivered",
 };
 
+function getAllowedNextStatuses(
+  current: StatusSection | null
+): StatusSection[] {
+  if (!current) return [STATUS_SECTION_ORDER[0]];
+  if (current === "Approval Pending") {
+    return ["Approval Received", "Total Loss / Disputed"];
+  }
+  const idx = (STATUS_SECTION_ORDER as readonly string[]).indexOf(current);
+  if (idx < 0 || idx >= STATUS_SECTION_ORDER.length - 1) return [];
+  return [STATUS_SECTION_ORDER[idx + 1]];
+}
+
 function normalizeStatusSection(raw: unknown): StatusSection {
   const s = typeof raw === "string" ? raw : "";
   if (s === "Approval Hold") return "Approval Pending";
@@ -324,6 +336,18 @@ export async function PATCH(
 
   const merged: Record<string, unknown> = { ...mergedBase };
   const fromStatus = (merged.status_section as string | null) ?? null;
+
+  if (toStatus && toStatus !== fromStatus) {
+    const allowedTargets = getAllowedNextStatuses(fromStatus as StatusSection | null);
+    if (!allowedTargets.includes(toStatus)) {
+      return NextResponse.json(
+        {
+          error: `Invalid stage transition: "${fromStatus ?? "(none)"}" → "${toStatus}". Allowed next: ${allowedTargets.length ? allowedTargets.join(", ") : "(none)"}.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
 
   const allowedFields: (keyof BodyshopJob)[] = [
     "ro_no",
