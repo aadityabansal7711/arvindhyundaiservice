@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { invalidateBranchListCache } from "../route";
 
 async function checkAuth() {
     const session = await getServerSession(authOptions);
@@ -28,6 +29,7 @@ export async function PATCH(
             where: { id },
             data,
         });
+        invalidateBranchListCache();
         return NextResponse.json(branch);
     } catch (error: any) {
         if (error.code === "P2025") return NextResponse.json({ error: "Branch not found" }, { status: 404 });
@@ -52,6 +54,7 @@ export async function DELETE(
             );
         }
         await prisma.branch.delete({ where: { id } });
+        invalidateBranchListCache();
         return NextResponse.json({ success: true });
     } catch (error: any) {
         if (error.code === "P2025") return NextResponse.json({ error: "Branch not found" }, { status: 404 });

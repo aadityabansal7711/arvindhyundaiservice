@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { getAllBranchesCached, invalidateBranchListCache, type BranchRow } from "@/lib/branch-list";
+
+export { invalidateBranchListCache };
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -11,48 +14,43 @@ export async function GET() {
     }
     try {
         const user = session.user as any;
+        const all = await getAllBranchesCached();
+
+        let result: BranchRow[];
         if (isBypassOnlyUser(user?.email)) {
             const bid = await getBypassBranchId();
-            if (!bid) {
-                return NextResponse.json([]);
+            result = bid ? all.filter((b) => b.id === bid) : [];
+        } else {
+            const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
+            const canViewAll = permissions.includes("branches.view_all");
+
+            if (canViewAll) {
+                result = all;
+            } else {
+                // Branch assignments may have changed since login — query fresh, not JWT cache.
+                const userId = typeof user?.id === "string" ? user.id : null;
+                const assignedBranches = userId
+                    ? await prisma.user.findUnique({
+                          where: { id: userId },
+                          select: { branchId: true, branches: { select: { branchId: true } } },
+                      })
+                    : null;
+
+                const assignedBranchIds: string[] =
+                    assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
+                const primaryBranchId =
+                    typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
+
+                const allowedSet = new Set<string>(
+                    assignedBranchIds.length > 0 ? assignedBranchIds : primaryBranchId ? [primaryBranchId] : []
+                );
+                result = all.filter((b) => allowedSet.has(b.id));
             }
-            const branches = await prisma.branch.findMany({
-                where: { id: bid },
-                orderBy: { name: "asc" },
-            });
-            return NextResponse.json(branches);
         }
-        const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-        const canViewAll = permissions.includes("branches.view_all") || permissions.includes("users.manage");
 
-        // Important: do not rely on JWT-cached `branchIds` because branch assignments may have changed
-        // and NextAuth JWT strategy won't refresh automatically until re-login.
-        const userId = typeof user?.id === "string" ? user.id : null;
-        const assignedBranches = !canViewAll && userId
-            ? await prisma.user.findUnique({
-                  where: { id: userId },
-                  select: { branchId: true, branches: { select: { branchId: true } } },
-              })
-            : null;
-
-        const assignedBranchIds: string[] =
-            assignedBranches?.branches?.map((ub: { branchId: string }) => ub.branchId).filter(Boolean) ?? [];
-        const primaryBranchId =
-            typeof assignedBranches?.branchId === "string" ? assignedBranches.branchId : undefined;
-
-        const allowedBranchIds = canViewAll
-            ? null
-            : assignedBranchIds.length > 0
-              ? assignedBranchIds
-              : primaryBranchId
-                ? [primaryBranchId]
-                : [];
-
-        const branches = await prisma.branch.findMany({
-            where: allowedBranchIds === null ? undefined : { id: { in: allowedBranchIds } },
-            orderBy: { name: "asc" },
-        });
-        return NextResponse.json(branches);
+        const res = NextResponse.json(result);
+        res.headers.set("Cache-Control", "private, max-age=60, stale-while-revalidate=600");
+        return res;
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -73,6 +71,7 @@ export async function POST(req: NextRequest) {
         const branch = await prisma.branch.create({
             data: { name, city },
         });
+        invalidateBranchListCache();
         return NextResponse.json(branch);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

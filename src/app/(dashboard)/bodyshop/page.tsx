@@ -714,9 +714,8 @@ function BodyshopDashboardPageInner() {
                               : "—"}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
-                            {job.branch_id
-                              ? (branchNameById.get(job.branch_id) ?? "—")
-                              : "—"}
+                            {job.branch_name
+                              ?? (job.branch_id ? (branchNameById.get(job.branch_id) ?? "—") : "—")}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
                             {job.reg_no ?? "—"}

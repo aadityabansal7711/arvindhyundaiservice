@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import { listBodyshopJobs } from "@/lib/bodyshop-repo";
-import { isBypassOnlyUser, getBypassBranchId } from "@/lib/bypass-only-user";
+import { getBranchScopeForSessionUser } from "@/lib/bypass-only-user";
 
 export async function GET(_req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -11,12 +11,11 @@ export async function GET(_req: NextRequest) {
     }
 
     try {
-        const bypassOnly = isBypassOnlyUser((session.user as any)?.email);
-        const bypassBid = bypassOnly ? await getBypassBranchId() : null;
+        const scope = await getBranchScopeForSessionUser(session.user as any);
         const jobs = await listBodyshopJobs({
             limit: 6000,
             statusSection: "All",
-            branchIds: bypassOnly ? (bypassBid ? [bypassBid] : []) : undefined,
+            branchIds: scope.kind === "all" ? undefined : scope.ids,
         });
         const openJobs = jobs.filter((job) => job.status_section !== "Delivered");
         const agingRanges = [

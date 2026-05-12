@@ -56,8 +56,7 @@ export async function getBranchScopeForSessionUser(user: {
     }
 
     const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-    const canViewAllBranches =
-        permissions.includes("branches.view_all") || permissions.includes("users.manage");
+    const canViewAllBranches = permissions.includes("branches.view_all");
     if (canViewAllBranches) {
         return { kind: "all" };
     }

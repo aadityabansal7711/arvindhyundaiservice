@@ -5,6 +5,7 @@ import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-
 import { authOptions } from "@/lib/auth-options";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { getBranchNameMap } from "@/lib/branch-list";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
 // dynamic behavior so Next does not cache stale responses.
@@ -256,7 +257,7 @@ export async function GET(request: NextRequest) {
 
   const user = session.user as any;
   const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-  const canViewAllBranches = permissions.includes("branches.view_all") || permissions.includes("users.manage");
+  const canViewAllBranches = permissions.includes("branches.view_all");
   const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
   const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
   let allowedBranchIds: string[] | undefined =
@@ -398,6 +399,18 @@ export async function GET(request: NextRequest) {
     ? merged.filter((j) => j.status_section !== "Delivered")
     : merged;
   const filtered = filterJobs(openFiltered, search, status, limit);
+
+  // Attach branch_name server-side so the client can render the column without a
+  // second round trip to /api/data/branches (and without the Prisma cold-start cost).
+  try {
+    const nameMap = await getBranchNameMap();
+    for (const job of filtered) {
+      if (job.branch_id) job.branch_name = nameMap.get(job.branch_id) ?? null;
+    }
+  } catch {
+    // Non-fatal — column will fall back to the id-based lookup on the client.
+  }
+
   cacheSet(cacheKey, filtered, term ? 3000 : 30000);
   return NextResponse.json(filtered);
 }
