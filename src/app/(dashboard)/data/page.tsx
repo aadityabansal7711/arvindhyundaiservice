@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { isOwnerUser } from "@/lib/owner-access";
 
 type Role = { id: string; name: string };
 type Branch = { id: string; name: string };
@@ -53,6 +54,7 @@ export default function DataPage() {
     const userPermissions = (session?.user as any)?.permissions ?? [];
     const isManager = userRole?.toLowerCase() === "manager";
     const canManageData = userPermissions.includes("users.manage");
+    const canEditData = isOwnerUser(session?.user);
 
     const fetchRoles = () => apiGet<Role[]>("/api/data/roles").then(setRoles).catch(() => setRoles([]));
     const fetchBranches = () => apiGet<Branch[]>("/api/data/branches", { cacheMs: 60_000 }).then(setBranches).catch(() => setBranches([]));
@@ -314,7 +316,9 @@ export default function DataPage() {
                                                     <tr key={r.id} className="hover:bg-slate-50/50">
                                                         <td className="py-3 font-medium text-slate-900">{r.name}</td>
                                                         <td className="py-3 text-right">
-                                                            <button onClick={() => openRoleEdit(r)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                            {canEditData && (
+                                                                <button onClick={() => openRoleEdit(r)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                            )}
                                                             <button onClick={() => handleDeleteRole(r)} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                                         </td>
                                                     </tr>
@@ -353,7 +357,9 @@ export default function DataPage() {
                                                     <tr key={b.id} className="hover:bg-slate-50/50">
                                                         <td className="py-3 font-medium text-slate-900">{b.name}</td>
                                                         <td className="py-3 text-right">
-                                                            <button onClick={() => openBranchEdit(b)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                            {canEditData && (
+                                                                <button onClick={() => openBranchEdit(b)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                            )}
                                                             <button onClick={() => handleDeleteBranch(b)} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                                         </td>
                                                     </tr>
@@ -401,7 +407,9 @@ export default function DataPage() {
                                                                 <tr key={o.id} className="hover:bg-slate-50/50">
                                                                     <td className="px-4 py-2 font-medium text-slate-900">{o.label}</td>
                                                                     <td className="px-4 py-2 text-right">
-                                                                        <button onClick={() => openOptionEdit(o)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                        {canEditData && (
+                                                                            <button onClick={() => openOptionEdit(o)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                        )}
                                                                         <button onClick={() => handleDeleteOption(o)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
                                                                     </td>
                                                                 </tr>

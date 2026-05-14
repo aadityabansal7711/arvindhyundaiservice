@@ -19,6 +19,7 @@ import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import {
   compressImageToMax100KB,
 } from "@/lib/compress-image";
+import { isOwnerUser } from "@/lib/owner-access";
 
 type DropdownOption = { id: string; label: string; value: string };
 type Branch = { id: string; name: string };
@@ -85,10 +86,8 @@ function BodyshopDashboardPageInner() {
   const isGm =
     ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
     GM_EMAIL;
-  const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
-  const canDeleteRo =
-    ((session?.user as any)?.email as string | undefined)?.trim().toLowerCase() ===
-    allowedRoDeleteEmail;
+  const canEditRo = isOwnerUser(session?.user);
+  const canDeleteRo = canEditRo;
   const [branches, setBranches] = useState<Branch[]>([]);
   const [insuranceOptions, setInsuranceOptions] = useState<DropdownOption[]>([]);
   const [modelOptions, setModelOptions] = useState<DropdownOption[]>([]);
@@ -354,6 +353,7 @@ function BodyshopDashboardPageInner() {
         );
         return;
       }
+      const uploadedPhotos = [firstPhoto];
       setAddDebug("Creating RO...");
       await apiPost("/api/bodyshop-jobs", {
         id: ro,
@@ -378,6 +378,7 @@ function BodyshopDashboardPageInner() {
           );
           const encoded = await compressImageToMax100KB(file);
           await appendPhotoWithRetry(ro, encoded);
+          uploadedPhotos.push(encoded);
         }
       }
       setAddDebug("All photos saved");
@@ -390,11 +391,12 @@ function BodyshopDashboardPageInner() {
         const refreshed = await apiGet<BodyshopJobWithMeta>(
           `/api/bodyshop-jobs/${encodeURIComponent(ro)}`
         );
+        const refreshedWithPhotos = { ...refreshed, photos: uploadedPhotos };
         setJobs((prev) => {
           const exists = prev.some((j) => j.id === ro);
           return exists
-            ? prev.map((j) => (j.id === ro ? refreshed : j))
-            : [refreshed, ...prev];
+            ? prev.map((j) => (j.id === ro ? refreshedWithPhotos : j))
+            : [refreshedWithPhotos, ...prev];
         });
       } catch (e) {
         console.warn("Failed to refresh created job detail:", e);
@@ -473,18 +475,7 @@ function BodyshopDashboardPageInner() {
   };
 
   const onMoveToNextStatus = async (job: BodyshopJobWithMeta) => {
-    // Refetch this job detail so we compute the next status (and show photo count
-    // later) from the latest server state.
-    let currentJob = job;
-    try {
-      currentJob = await apiGet<BodyshopJobWithMeta>(
-        `/api/bodyshop-jobs/${encodeURIComponent(job.id)}`
-      );
-    } catch (e) {
-      console.warn("Failed to refresh job before move:", e);
-    }
-
-    const moveTargets = getMoveTargets(currentJob.status_section);
+    const moveTargets = getMoveTargets(job.status_section);
     if (!moveTargets || moveTargets.length === 0) return;
 
     const now = new Date();
@@ -495,7 +486,7 @@ function BodyshopDashboardPageInner() {
       "yyyy-MM-dd HH:mm"
     )}`;
 
-    setMoveJob(currentJob);
+    setMoveJob(job);
     setMoveToOptions(moveTargets.length > 1 ? moveTargets : null);
     setMoveToStatus(defaultMoveToStatus);
     setMoveViewOpen(false);
@@ -589,7 +580,16 @@ function BodyshopDashboardPageInner() {
         const refreshed = await apiGet<BodyshopJobWithMeta>(
           `/api/bodyshop-jobs/${encodeURIComponent(jobId)}`
         );
-        setJobs((prev) => prev.map((j) => (j.id === jobId ? refreshed : j)));
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === jobId
+              ? {
+                  ...refreshed,
+                  photos: Array.isArray(refreshed.photos) ? refreshed.photos : j.photos,
+                }
+              : j
+          )
+        );
       } catch (e) {
         console.warn("Failed to refresh moved job detail:", e);
       }
@@ -799,18 +799,20 @@ function BodyshopDashboardPageInner() {
                           </td>
                           <td className="px-5 py-3 text-sm">
                             <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(
-                                    `/bodyshop/job/${encodeURIComponent(job.id)}`
-                                  );
-                                }}
-                                className="rounded-lg px-2.5 py-1.5 text-sky-700 hover:bg-sky-50 font-bold text-xs transition-colors"
-                              >
-                                Edit
-                              </button>
+                              {canEditRo && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(
+                                      `/bodyshop/job/${encodeURIComponent(job.id)}`
+                                    );
+                                  }}
+                                  className="rounded-lg px-2.5 py-1.5 text-sky-700 hover:bg-sky-50 font-bold text-xs transition-colors"
+                                >
+                                  Edit
+                                </button>
+                              )}
                               {canDeleteRo && (
                                 <button
                                   type="button"

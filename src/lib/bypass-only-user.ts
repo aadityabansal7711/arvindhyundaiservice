@@ -45,6 +45,7 @@ export type BranchScope = { kind: "all" } | { kind: "ids"; ids: string[] };
  * branch, regardless of role permissions.
  */
 export async function getBranchScopeForSessionUser(user: {
+    id?: string | null;
     email?: string | null;
     permissions?: string[];
     branchIds?: string[];
@@ -56,14 +57,29 @@ export async function getBranchScopeForSessionUser(user: {
     }
 
     const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-    const canViewAllBranches = permissions.includes("branches.view_all");
+    const canViewAllBranches =
+        permissions.includes("branches.view_all") || permissions.includes("users.manage");
     if (canViewAllBranches) {
         return { kind: "all" };
     }
 
     const canViewMultiBranches = permissions.includes("branches.view_multi");
-    const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
-    const userBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
+    const freshAssignments =
+        typeof user?.id === "string"
+            ? await prisma.user.findUnique({
+                  where: { id: user.id },
+                  select: { branchId: true, branches: { select: { branchId: true } } },
+              })
+            : null;
+    const assignedBranchIds: string[] =
+        freshAssignments?.branches?.map((ub) => ub.branchId).filter(Boolean) ??
+        (Array.isArray(user?.branchIds) ? user.branchIds : []);
+    const userBranchId =
+        typeof freshAssignments?.branchId === "string"
+            ? freshAssignments.branchId
+            : typeof user?.branchId === "string"
+              ? user.branchId
+              : undefined;
 
     const allowedBranchIds = canViewMultiBranches
         ? assignedBranchIds.length > 0

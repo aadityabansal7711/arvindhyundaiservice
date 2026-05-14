@@ -4,7 +4,7 @@ import { listBodyshopJobs, ensureSeededOnce } from "@/lib/bodyshop-repo";
 import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { authOptions } from "@/lib/auth-options";
 import supabaseAdmin from "@/lib/supabase-admin";
-import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { getBypassBranchId, getBranchScopeForSessionUser, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { getBranchNameMap } from "@/lib/branch-list";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
@@ -256,18 +256,9 @@ export async function GET(request: NextRequest) {
     openOnlyParam == null ? true : !(openOnlyParam === "0" || openOnlyParam === "false");
 
   const user = session.user as any;
-  const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-  const canViewAllBranches = permissions.includes("branches.view_all");
-  const assignedBranchIds: string[] = Array.isArray(user?.branchIds) ? user.branchIds : [];
-  const primaryBranchId = typeof user?.branchId === "string" ? user.branchId : undefined;
-  let allowedBranchIds: string[] | undefined =
-    canViewAllBranches ? undefined : (assignedBranchIds.length > 0 ? assignedBranchIds : (primaryBranchId ? [primaryBranchId] : []));
-  if (isBypassOnlyUser(user?.email)) {
-    const bid = await getBypassBranchId();
-    allowedBranchIds = bid ? [bid] : [];
-  }
-
-  const restrictByBranch = isBypassOnlyUser(user?.email) || !canViewAllBranches;
+  const branchScope = await getBranchScopeForSessionUser(user);
+  const allowedBranchIds = branchScope.kind === "all" ? undefined : branchScope.ids;
+  const restrictByBranch = branchScope.kind !== "all";
   const effectiveBranchIds =
     !restrictByBranch
       ? undefined
@@ -275,7 +266,7 @@ export async function GET(request: NextRequest) {
         ? [branchIdParam]
         : allowedBranchIds ?? [];
 
-  if (isBypassOnlyUser(user?.email) && effectiveBranchIds !== undefined && effectiveBranchIds.length === 0) {
+  if (effectiveBranchIds !== undefined && effectiveBranchIds.length === 0) {
     if (countsOnly) {
       const stages: Record<string, number> = {};
       for (const s of [
@@ -362,6 +353,11 @@ export async function GET(request: NextRequest) {
   const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
   if (cached) return NextResponse.json(cached);
 
+  const branchNameMapPromise =
+    view === "board"
+      ? getBranchNameMap().catch(() => null)
+      : Promise.resolve(null);
+
   await ensureSeededOnce();
 
   // Keep board payload lightweight. Full photo arrays are fetched only on detail
@@ -402,13 +398,11 @@ export async function GET(request: NextRequest) {
 
   // Attach branch_name server-side so the client can render the column without a
   // second round trip to /api/data/branches (and without the Prisma cold-start cost).
-  try {
-    const nameMap = await getBranchNameMap();
+  const nameMap = await branchNameMapPromise;
+  if (nameMap) {
     for (const job of filtered) {
       if (job.branch_id) job.branch_name = nameMap.get(job.branch_id) ?? null;
     }
-  } catch {
-    // Non-fatal — column will fall back to the id-based lookup on the client.
   }
 
   cacheSet(cacheKey, filtered, term ? 3000 : 30000);

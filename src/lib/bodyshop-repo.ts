@@ -79,6 +79,10 @@ export async function listBodyshopJobs(
 ): Promise<BodyshopJobWithMeta[]> {
   const { search, statusSection, branchIds, limit = 200, select } = params;
 
+  if (branchIds && branchIds.length === 0) {
+    return [];
+  }
+
   // Try Supabase first.
   let query = supabaseAdmin
     .from(TABLE_NAME)
@@ -116,7 +120,7 @@ export async function listBodyshopJobs(
       if (statusSection && statusSection !== "All" && job.status_section !== statusSection) {
         return false;
       }
-      if (branchIds && branchIds.length > 0 && job.branch_id && !branchIds.includes(job.branch_id)) {
+      if (branchIds && branchIds.length > 0 && (!job.branch_id || !branchIds.includes(job.branch_id))) {
         return false;
       }
       if (!search || !search.trim()) return true;
@@ -140,4 +144,3 @@ export async function listBodyshopJobs(
     });
   });
 }
-

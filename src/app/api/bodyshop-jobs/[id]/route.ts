@@ -15,6 +15,8 @@ const TABLE_NAME = "bodyshop_jobs";
 const STAGE_TABLE = "bodyshop_job_stages";
 const HIDDEN_TABLE = "bodyshop_job_hidden";
 const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
+const JOB_DETAIL_SELECT =
+  "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,surveyor,service_advisor,mobile_no,claim_intimation_date,claim_no,hap_status,survey_date,approval_date,advisor_remark,whatsapp_date,tentative_labor,promised_date,general_remark,replace_panels,dent_panels,mrs,mrs_date,order_no,order_date,eta_date,received_date,status_section,billing_status,parts_status,created_at,updated_at";
 type CacheEntry<T> = { value: T; expiresAt: number };
 const photoCache = new Map<string, CacheEntry<{ id: string; ro_no: string; photos: string[] }>>();
 
@@ -191,7 +193,7 @@ export async function GET(
     // ignore if table doesn't exist yet
   }
 
-  const baseSelect = photosOnly ? "id,ro_no,photos" : "*";
+  const baseSelect = photosOnly ? "id,ro_no,photos" : JOB_DETAIL_SELECT;
   const { data, error } = await supabaseAdmin
     .from(TABLE_NAME)
     .select(baseSelect)
@@ -239,6 +241,7 @@ export async function GET(
     return NextResponse.json(
       addMeta({
         ...row,
+        photos: null,
         status_section: normalizeStatusSection((row as any).status_section),
       })
     );
@@ -434,15 +437,17 @@ export async function PATCH(
       .from(STAGE_TABLE)
       .insert(baseStagePayload);
 
-    // Retry without gm_remark for backward compatibility if the column isn't present.
-    if (
-      stageError &&
-      gmRemark != null &&
-      String(stageError.message ?? "").toLowerCase().includes("gm_remark")
-    ) {
-      delete baseStagePayload.gm_remark;
-      const retry = await supabaseAdmin.from(STAGE_TABLE).insert(baseStagePayload);
-      stageError = retry.error;
+    // Retry without optional history columns for older Supabase installs.
+    for (const optionalColumn of ["gm_remark", "changed_by"] as const) {
+      if (
+        stageError &&
+        Object.prototype.hasOwnProperty.call(baseStagePayload, optionalColumn) &&
+        String(stageError.message ?? "").toLowerCase().includes(optionalColumn)
+      ) {
+        delete baseStagePayload[optionalColumn];
+        const retry = await supabaseAdmin.from(STAGE_TABLE).insert(baseStagePayload);
+        stageError = retry.error;
+      }
     }
 
     if (stageError) {

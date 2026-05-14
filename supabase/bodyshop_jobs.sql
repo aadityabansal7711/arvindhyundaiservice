@@ -72,6 +72,7 @@ create table if not exists public.bodyshop_job_stages (
 );
 
 -- Add new columns to existing installations safely.
+alter table public.bodyshop_job_stages add column if not exists changed_by text;
 alter table public.bodyshop_job_stages add column if not exists gm_remark text;
 
 create index if not exists idx_bodyshop_job_stages_job_id
@@ -94,4 +95,3 @@ grant select, insert, update, delete on table public.bodyshop_job_hidden to anon
 
 -- Ensure future tables in public are accessible too (optional but helpful).
 alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated, service_role;
-

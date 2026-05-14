@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { UserPlus, Shield, Edit2, Trash2, Search, X, Upload } from "lucide-react";
 import { apiGet, apiPatch, apiPost, apiDelete } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { isOwnerUser } from "@/lib/owner-access";
 
 type UserRow = {
     id: string;
@@ -28,6 +30,7 @@ type AdvisorOption = {
 };
 
 export default function UserManagementPage() {
+    const { data: session } = useSession();
     const [users, setUsers] = useState<UserRow[]>([]);
     const [advisors, setAdvisors] = useState<AdvisorOption[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -66,6 +69,7 @@ export default function UserManagementPage() {
     const [advisorForm, setAdvisorForm] = useState({ label: "", branchId: "" });
     const [advisorSaving, setAdvisorSaving] = useState(false);
     const [advisorError, setAdvisorError] = useState("");
+    const canEditUsers = isOwnerUser(session?.user);
 
     const fetchUsers = async () => {
         try {
@@ -433,14 +437,16 @@ export default function UserManagementPage() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleEditClick(u)}
-                                                    className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-blue-600"
-                                                    aria-label="Edit user"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
+                                                {canEditUsers && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleEditClick(u)}
+                                                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-blue-600"
+                                                        aria-label="Edit user"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={() => handleDeleteClick(u)}
@@ -476,14 +482,16 @@ export default function UserManagementPage() {
                                         <td className="px-6 py-4 text-sm text-slate-700">{a.branch?.name ?? "-"}</td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openEditAdvisor(a)}
-                                                    className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-blue-600"
-                                                    aria-label="Edit advisor"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
+                                                {canEditUsers && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openEditAdvisor(a)}
+                                                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-blue-600"
+                                                        aria-label="Edit advisor"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
                                                     onClick={() => handleDeleteAdvisor(a)}
@@ -875,4 +883,3 @@ export default function UserManagementPage() {
         </>
     );
 }
-
