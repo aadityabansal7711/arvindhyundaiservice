@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { readJsonObject, rejectCrossSiteMutation, requireOwnerAdmin, validateMutationRequest } from "@/lib/server-auth";
 
 async function checkAuth() {
-    const session = await getServerSession(authOptions);
-    if (!session || !(session.user as any).permissions?.includes("users.manage")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireOwnerAdmin();
+    if (!auth.ok) return auth.response;
     return null;
 }
 
@@ -15,13 +12,16 @@ export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
     const authError = await checkAuth();
     if (authError) return authError;
     const { id } = await params;
     if (!id) return NextResponse.json({ error: "ID required" }, { status: 400 });
     try {
-        const body = await req.json();
-        const name = body?.name?.trim();
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
         if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
         const role = await prisma.role.update({
             where: { id },
@@ -36,9 +36,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-    _req: NextRequest,
+    req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const originError = rejectCrossSiteMutation(req);
+    if (originError) return originError;
     const authError = await checkAuth();
     if (authError) return authError;
     const { id } = await params;

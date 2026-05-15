@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
 import { listBodyshopJobs, ensureSeededOnce } from "@/lib/bodyshop-repo";
 import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
-import { authOptions } from "@/lib/auth-options";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getBypassBranchId, getBranchScopeForSessionUser, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { getBranchNameMap } from "@/lib/branch-list";
+import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
+import { enforceRateLimit, readJsonObject, requireBodyshopAccess, validateMutationRequest } from "@/lib/server-auth";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
 // dynamic behavior so Next does not cache stale responses.
@@ -30,6 +30,33 @@ function cacheSet<T>(key: string, value: T, ttlMs: number) {
 }
 function cacheClear() {
   cache.clear();
+}
+
+function isValidStatusSection(value: unknown): value is StatusSection {
+  return typeof value === "string" && (STATUS_SECTION_ORDER as readonly string[]).includes(value);
+}
+
+function asText(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return null;
+}
+
+function asPhotoList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const photos = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return photos.length > 0 ? photos : null;
+}
+
+function asOptionalNumber(value: unknown): number | null {
+  if (value === "" || value == null) return null;
+  const next = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(next) ? next : null;
 }
 
 const STATUS_MAP: Record<string, StatusSection> = {
@@ -238,10 +265,8 @@ function filterJobs(
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireBodyshopAccess();
+  if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
   const countsOnly = url.searchParams.get("countsOnly") === "1" || url.searchParams.get("countsOnly") === "true";
@@ -255,7 +280,7 @@ export async function GET(request: NextRequest) {
   const openOnly =
     openOnlyParam == null ? true : !(openOnlyParam === "0" || openOnlyParam === "false");
 
-  const user = session.user as any;
+  const user = auth.user;
   const branchScope = await getBranchScopeForSessionUser(user);
   const allowedBranchIds = branchScope.kind === "all" ? undefined : branchScope.ids;
   const restrictByBranch = branchScope.kind !== "all";
@@ -310,22 +335,17 @@ export async function GET(request: NextRequest) {
       // Ignore if table doesn't exist yet.
     }
 
-    // Load only the columns needed for counts.
-    let sbQuery = supabaseAdmin
-      .from("bodyshop_jobs")
-      .select("ro_no,status_section")
-      .limit(6000);
-    if (effectiveBranchIds && effectiveBranchIds.length > 0) {
-      sbQuery = sbQuery.in("branch_id", effectiveBranchIds);
-    }
-    const { data: sbRows } = await sbQuery;
+    const jobs = await listBodyshopJobs({
+      limit: 6000,
+      statusSection: "All",
+      branchIds: effectiveBranchIds,
+      select: "id,ro_no,branch_id,ro_date,status_section,promised_date",
+    });
 
     const byRo = new Map<string, StatusSection>();
-    for (const row of sbRows ?? []) {
-      const roNo = (row as any)?.ro_no;
-      if (typeof roNo === "string" && roNo) {
-        byRo.set(roNo, normalizeStatusSection((row as any)?.status_section));
-      }
+    for (const job of jobs) {
+      if (hiddenIds.has(job.id) || hiddenIds.has(job.ro_no)) continue;
+      byRo.set(job.ro_no, normalizeStatusSection(job.status_section));
     }
 
     if (openOnly) {
@@ -383,7 +403,9 @@ export async function GET(request: NextRequest) {
     if (typeof id === "string" && id) hiddenIds.add(id);
   }
 
-  const merged: BodyshopJobWithMeta[] = [...supabaseJobs];
+  const merged: BodyshopJobWithMeta[] = supabaseJobs.filter(
+    (job) => !hiddenIds.has(job.id) && !hiddenIds.has(job.ro_no)
+  );
 
   merged.sort((a, b) => {
     const dA = a.ro_date ? new Date(a.ro_date).getTime() : 0;
@@ -410,13 +432,19 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const mutationError = validateMutationRequest(request);
+  if (mutationError) return mutationError;
 
-  const body = (await request.json()) as Record<string, any>;
-  const userEmail = (session.user as any)?.email as string | undefined;
+  const auth = await requireBodyshopAccess();
+  if (!auth.ok) return auth.response;
+  const rateLimitError = enforceRateLimit(request, "bodyshop-create", 30, 60_000, auth.user.id ?? auth.user.email);
+  if (rateLimitError) return rateLimitError;
+
+  const parsed = await readJsonObject(request);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
+  const branchScope = await getBranchScopeForSessionUser(auth.user);
+  const userEmail = auth.user.email ?? undefined;
   if (isBypassOnlyUser(userEmail)) {
     const bid = await getBypassBranchId();
     if (!bid) {
@@ -429,8 +457,21 @@ export async function POST(request: NextRequest) {
     body.branch_id = bid;
   }
 
-  const id = (body?.id ?? body?.ro_no ?? body?.roNo) as string | undefined;
-  if (!id || !String(id).trim()) {
+  if (branchScope.kind === "ids") {
+    const allowed = new Set(branchScope.ids);
+    const requestedBranchId =
+      typeof body?.branch_id === "string" && body.branch_id.trim()
+        ? body.branch_id.trim()
+        : null;
+    if (!requestedBranchId && branchScope.ids.length === 1) {
+      body.branch_id = branchScope.ids[0];
+    } else if (!requestedBranchId || !allowed.has(requestedBranchId)) {
+      return NextResponse.json({ error: "Forbidden branch" }, { status: 403 });
+    }
+  }
+
+  const id = asText(body?.id ?? body?.ro_no ?? body?.roNo);
+  if (!id) {
     return NextResponse.json(
       { error: "id (or ro_no) is required" },
       { status: 400 }
@@ -438,44 +479,44 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
+  const requestedStatus = body?.status_section ?? "Document Pending";
+  if (!isValidStatusSection(requestedStatus)) {
+    return NextResponse.json({ error: "Invalid status_section" }, { status: 400 });
+  }
   const payload: Partial<BodyshopJob> & { id: string; updated_at: string } = {
-    id: String(id).trim(),
-    ro_no: String(body?.ro_no ?? body?.roNo ?? id).trim(),
-    branch_id: body?.branch_id ?? null,
-    ro_date: body?.ro_date ?? null,
-    reg_no: body?.reg_no ?? null,
-    customer_name: body?.customer_name ?? null,
-    model: body?.model ?? null,
-    insurance_company: body?.insurance_company ?? null,
-    surveyor: body?.surveyor ?? null,
-    service_advisor: body?.service_advisor ?? null,
-    mobile_no: body?.mobile_no ?? null,
-    photos: Array.isArray(body?.photos) ? body.photos : null,
-    claim_intimation_date: body?.claim_intimation_date ?? null,
-    claim_no: body?.claim_no ?? null,
-    hap_status: body?.hap_status ?? null,
-    survey_date: body?.survey_date ?? null,
-    approval_date: body?.approval_date ?? null,
-    advisor_remark: body?.advisor_remark ?? null,
-    whatsapp_date: body?.whatsapp_date ?? null,
-    tentative_labor:
-      body?.tentative_labor === "" || body?.tentative_labor == null
-        ? null
-        : Number(body?.tentative_labor),
-    promised_date: body?.promised_date ?? null,
-    general_remark: body?.general_remark ?? null,
-    replace_panels: body?.replace_panels ?? null,
-    dent_panels: body?.dent_panels ?? null,
-    mrs: body?.mrs ?? null,
-    mrs_date: body?.mrs_date ?? null,
-    order_no: body?.order_no ?? null,
-    order_date: body?.order_date ?? null,
-    eta_date: body?.eta_date ?? null,
-    received_date: body?.received_date ?? null,
-    status_section:
-      (body?.status_section as StatusSection | undefined) ?? "Document Pending",
-    billing_status: body?.billing_status ?? null,
-    parts_status: body?.parts_status ?? null,
+    id,
+    ro_no: asText(body?.ro_no ?? body?.roNo) ?? id,
+    branch_id: asText(body?.branch_id),
+    ro_date: asText(body?.ro_date),
+    reg_no: asText(body?.reg_no),
+    customer_name: asText(body?.customer_name),
+    model: asText(body?.model),
+    insurance_company: asText(body?.insurance_company),
+    surveyor: asText(body?.surveyor),
+    service_advisor: asText(body?.service_advisor),
+    mobile_no: asText(body?.mobile_no),
+    photos: asPhotoList(body?.photos),
+    claim_intimation_date: asText(body?.claim_intimation_date),
+    claim_no: asText(body?.claim_no),
+    hap_status: asText(body?.hap_status),
+    survey_date: asText(body?.survey_date),
+    approval_date: asText(body?.approval_date),
+    advisor_remark: asText(body?.advisor_remark),
+    whatsapp_date: asText(body?.whatsapp_date),
+    tentative_labor: asOptionalNumber(body?.tentative_labor),
+    promised_date: asText(body?.promised_date),
+    general_remark: asText(body?.general_remark),
+    replace_panels: asText(body?.replace_panels),
+    dent_panels: asText(body?.dent_panels),
+    mrs: asText(body?.mrs),
+    mrs_date: asText(body?.mrs_date),
+    order_no: asText(body?.order_no),
+    order_date: asText(body?.order_date),
+    eta_date: asText(body?.eta_date),
+    received_date: asText(body?.received_date),
+    status_section: requestedStatus,
+    billing_status: asText(body?.billing_status),
+    parts_status: asText(body?.parts_status),
     updated_at: now,
   };
 

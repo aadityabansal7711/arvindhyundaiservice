@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { isOwnerUser } from "@/lib/owner-access";
+import { readJsonObject, validateMutationRequest } from "@/lib/server-auth";
 
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -122,13 +124,19 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
     const session = await getServerSession(authOptions);
     if (!session || !(session.user as any).permissions?.includes("users.manage")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!isOwnerUser(session.user)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     try {
-        const body = await req.json();
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
         const { groupKey, label, value, sortOrder, branchId } = body;
         if (!groupKey || !label) {
             return NextResponse.json(

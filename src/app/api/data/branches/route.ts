@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { getAllBranchesCached, invalidateBranchListCache, type BranchRow } from "@/lib/branch-list";
+import { readJsonObject, requireOwnerAdmin, validateMutationRequest } from "@/lib/server-auth";
 
 export { invalidateBranchListCache };
 
@@ -22,7 +23,8 @@ export async function GET() {
             result = bid ? all.filter((b) => b.id === bid) : [];
         } else {
             const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
-            const canViewAll = permissions.includes("branches.view_all");
+            const canViewAll =
+                permissions.includes("branches.view_all") || permissions.includes("users.manage");
 
             if (canViewAll) {
                 result = all;
@@ -57,14 +59,15 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-    const session = await getServerSession(authOptions);
-    if (!session || !(session.user as any).permissions?.includes("users.manage")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
+    const auth = await requireOwnerAdmin();
+    if (!auth.ok) return auth.response;
     try {
-        const body = await req.json();
-        const name = body?.name?.trim();
-        const city = body?.city?.trim() ?? "";
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        const city = typeof body.city === "string" ? body.city.trim() : "";
         if (!name) {
             return NextResponse.json({ error: "Name is required" }, { status: 400 });
         }

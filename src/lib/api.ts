@@ -22,10 +22,26 @@ function invalidateApiCache(url: string) {
       key === url ||
       key === path ||
       key.startsWith(`${path}?`) ||
+      key.startsWith(`${path}/`) ||
       (parentPath && (key === parentPath || key.startsWith(`${parentPath}?`)))
+      || (parentPath && key.startsWith(`${parentPath}/`))
     ) {
       getCache.delete(key);
     }
+  }
+}
+
+export function clearApiCache(urlPrefix?: string) {
+  if (!urlPrefix) {
+    getCache.clear();
+    inflightGets.clear();
+    return;
+  }
+  for (const key of getCache.keys()) {
+    if (key === urlPrefix || key.startsWith(urlPrefix)) getCache.delete(key);
+  }
+  for (const key of inflightGets.keys()) {
+    if (key === urlPrefix || key.startsWith(urlPrefix)) inflightGets.delete(key);
   }
 }
 
@@ -49,7 +65,7 @@ export async function apiGet<T = unknown>(url: string, options: ApiGetOptions = 
     const cached = getCache.get(url);
     if (cached && cached.expiresAt > now) return cached.data as T;
 
-    const inflight = inflightGets.get(url);
+    const inflight = signal ? undefined : inflightGets.get(url);
     if (inflight) return inflight as Promise<T>;
   }
 
@@ -69,7 +85,7 @@ export async function apiGet<T = unknown>(url: string, options: ApiGetOptions = 
       inflightGets.delete(url);
     });
 
-  if (cacheMs > 0) inflightGets.set(url, request);
+  if (cacheMs > 0 && !signal) inflightGets.set(url, request);
   return request;
 }
 

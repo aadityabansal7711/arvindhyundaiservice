@@ -35,8 +35,12 @@ export default function SetPasswordPage() {
         e.preventDefault();
         setError("");
 
-        if (newPassword.length < 6) {
-            setError("Password must be at least 6 characters");
+        if (newPassword.length < 8) {
+            setError("Password must be at least 8 characters");
+            return;
+        }
+        if (newPassword === "admin123") {
+            setError("Choose a password different from the temporary password");
             return;
         }
         if (newPassword !== confirmPassword) {
@@ -121,11 +125,11 @@ export default function SetPasswordPage() {
                                 <input
                                     type="password"
                                     required
-                                    minLength={6}
+                                    minLength={8}
                                     value={newPassword}
                                     onChange={(e) => setNewPassword(e.target.value)}
                                     className="block w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all sm:text-sm"
-                                    placeholder="At least 6 characters"
+                                    placeholder="At least 8 characters"
                                 />
                             </div>
                         </div>
@@ -139,7 +143,7 @@ export default function SetPasswordPage() {
                                 <input
                                     type="password"
                                     required
-                                    minLength={6}
+                                    minLength={8}
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
                                     className="block w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all sm:text-sm"

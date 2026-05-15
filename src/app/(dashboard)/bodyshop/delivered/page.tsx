@@ -1,13 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
 import { Search, X } from "lucide-react";
 
 import { apiDelete, apiGet } from "@/lib/api";
+import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
 import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
 
 type Branch = { id: string; name: string };
@@ -20,14 +20,6 @@ type StageHistoryRow = {
   remark: string | null;
   gm_remark: string | null;
 };
-type PhotoPreviewState = {
-  title: string;
-  photos: string[];
-  loading: boolean;
-  error: string | null;
-  visibleCount: number;
-};
-
 function DeliveredPageInner() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -118,6 +110,7 @@ function DeliveredPageInner() {
   }, [branches]);
 
   const onDelete = async (id: string) => {
+    if (!window.confirm("Delete this delivered RO? This cannot be undone.")) return;
     const prev = jobs;
     setJobs((p) => p.filter((j) => j.id !== id));
     setPhotoPreview(null);
@@ -292,6 +285,7 @@ function DeliveredPageInner() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setPhotoPreview({
+                              jobId: job.id,
                               title: `RO ${job.ro_no} photos`,
                               photos: [],
                               loading: true,
@@ -310,6 +304,7 @@ function DeliveredPageInner() {
                                   ? refreshed.photos
                                   : [];
                                 setPhotoPreview({
+                                  jobId: job.id,
                                   title: `RO ${refreshed.ro_no} photos`,
                                   photos,
                                   loading: false,
@@ -318,6 +313,7 @@ function DeliveredPageInner() {
                                 });
                               } catch {
                                 setPhotoPreview({
+                                  jobId: job.id,
                                   title: `RO ${job.ro_no} photos`,
                                   photos: Array.isArray(job.photos) ? job.photos : [],
                                   loading: false,
@@ -389,100 +385,28 @@ function DeliveredPageInner() {
 
       {/* Photo preview modal */}
       {photoPreview && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setPhotoPreview(null)}
-        >
-          <div
-            className="bg-white w-full max-w-3xl rounded-t-2xl sm:rounded-2xl border border-slate-200 shadow-xl max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 sm:p-6 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-bold text-slate-900">
-                    {photoPreview.title}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {photoPreview.loading
-                      ? "Loading photos..."
-                      : `${photoPreview.photos.length} photo${photoPreview.photos.length !== 1 ? "s" : ""}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPhotoPreview(null)}
-                  aria-label="Close"
-                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {photoPreview.error && (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                  {photoPreview.error}
-                </div>
-              )}
-
-              {photoPreview.loading ? (
-                <div className="py-8 text-center text-sm text-slate-500">Loading photos...</div>
-              ) : photoPreview.photos.length === 0 ? (
-                <div className="py-8 text-center text-sm text-slate-500">No photos available.</div>
-              ) : (
-                <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {photoPreview.photos.slice(0, photoPreview.visibleCount).map((src, idx) => (
-                  <a
-                    key={`${idx}`}
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
-	                    className="group relative block h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                    title="Open full size"
-                  >
-	                    <Image
-	                      src={src}
-	                      alt={`Photo ${idx + 1}`}
-	                      className="object-cover group-hover:opacity-95"
-	                      fill
-	                      sizes="(min-width: 640px) 33vw, 50vw"
-	                      unoptimized
-	                    />
-                  </a>
-                ))}
-              </div>
-              {photoPreview.visibleCount < photoPreview.photos.length && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPhotoPreview((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              visibleCount: Math.min(prev.visibleCount + 12, prev.photos.length),
-                            }
-                          : prev
-                      )
-                    }
-                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  >
-                    Load more photos
-                  </button>
-                </div>
-              )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <PhotoPreviewModal
+          preview={photoPreview}
+          onClose={() => setPhotoPreview(null)}
+          onLoadMore={() =>
+            setPhotoPreview((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    visibleCount: Math.min(prev.visibleCount + 12, prev.photos.length),
+                  }
+                : prev
+            )
+          }
+        />
       )}
 
       {/* Movement details modal */}
       {stageViewOpen && (
         <div
-          className="fixed inset-0 z-55 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-[55] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
           onClick={closeStageView}
         >
           <div

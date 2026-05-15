@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
@@ -33,26 +33,36 @@ export default function BodyshopJobDetailPage() {
   const [form, setForm] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const jobId = typeof params?.id === "string" ? params.id : "";
 
   useEffect(() => {
+    if (!jobId) return;
+    const controller = new AbortController();
     const load = async () => {
+      setIsLoading(true);
+      setSaveError(null);
       try {
+        const encodedId = encodeURIComponent(jobId);
         const [jobData, stagesData] = await Promise.all([
-          apiGet<BodyshopJobWithMeta>(`/api/bodyshop-jobs/${params.id}`),
-          apiGet<StageHistory[]>(`/api/bodyshop-stages?jobId=${params.id}`),
+          apiGet<BodyshopJobWithMeta>(`/api/bodyshop-jobs/${encodedId}`, { signal: controller.signal }),
+          apiGet<StageHistory[]>(`/api/bodyshop-stages?jobId=${encodedId}`, { signal: controller.signal }),
         ]);
+        if (controller.signal.aborted) return;
         setJob(jobData);
         setStages(stagesData);
         setActiveStatus(jobData.status_section);
         setForm(jobData as any);
       } catch (err) {
+        if ((err as DOMException)?.name === "AbortError") return;
         console.error(err);
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
-    if (params?.id) void load();
-  }, [params]);
+    void load();
+    return () => controller.abort();
+  }, [jobId]);
 
   const fieldsForStatus = useMemo(() => {
     const map: Record<StatusSection, { key: keyof BodyshopJobWithMeta; label: string; type: "text" | "date" | "number" | "textarea" | "select"; options?: string[] }[]> =
@@ -138,9 +148,12 @@ export default function BodyshopJobDetailPage() {
 
   const onSave = async () => {
     if (!job || !activeStatus) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     setSaveError(null);
     try {
+      const encodedId = encodeURIComponent(job.id);
       const payload: Record<string, any> = {};
       // Always allow status update (users asked "status wise")
       payload.status_section = activeStatus;
@@ -148,16 +161,17 @@ export default function BodyshopJobDetailPage() {
       for (const f of fieldsForStatus[activeStatus] ?? []) {
         payload[f.key] = form[f.key as string] ?? null;
       }
-      await apiPatch(`/api/bodyshop-jobs/${job.id}`, payload);
-      const refreshed = await apiGet<BodyshopJobWithMeta>(`/api/bodyshop-jobs/${job.id}`);
+      await apiPatch(`/api/bodyshop-jobs/${encodedId}`, payload);
+      const refreshed = await apiGet<BodyshopJobWithMeta>(`/api/bodyshop-jobs/${encodedId}`);
       setJob(refreshed);
       setForm(refreshed as any);
       setActiveStatus(refreshed.status_section);
-      const stagesData = await apiGet<StageHistory[]>(`/api/bodyshop-stages?jobId=${job.id}`);
+      const stagesData = await apiGet<StageHistory[]>(`/api/bodyshop-stages?jobId=${encodedId}`);
       setStages(stagesData);
     } catch (e) {
       setSaveError((e as Error)?.message ?? "Failed to save");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -380,4 +394,3 @@ export default function BodyshopJobDetailPage() {
       </div>
   );
 }
-

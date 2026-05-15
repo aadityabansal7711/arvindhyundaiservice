@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabase-admin";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
-import { bypassUserDeniesBranchAccess, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { canAccessBranch, requireBodyshopAccess } from "@/lib/server-auth";
 
 const STAGE_TABLE = "bodyshop_job_stages";
 const JOB_TABLE = "bodyshop_jobs";
@@ -23,24 +21,32 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireBodyshopAccess();
+  if (!auth.ok) return auth.response;
 
-  const userEmail = (session.user as any)?.email as string | undefined;
-  if (isBypassOnlyUser(userEmail)) {
-    const { data: job } = await supabaseAdmin
-      .from(JOB_TABLE)
-      .select("branch_id")
-      .or(`id.eq.${jobId},ro_no.eq.${jobId}`)
-      .maybeSingle();
-    if (
-      !job ||
-      (await bypassUserDeniesBranchAccess(userEmail, (job as any).branch_id ?? null))
-    ) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const userEmail = auth.user.email ?? undefined;
+  const byId = await supabaseAdmin
+    .from(JOB_TABLE)
+    .select("branch_id")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (byId.error) {
+    return NextResponse.json({ error: byId.error.message }, { status: 500 });
+  }
+  const byRo =
+    byId.data == null
+      ? await supabaseAdmin
+          .from(JOB_TABLE)
+          .select("branch_id")
+          .eq("ro_no", jobId)
+          .maybeSingle()
+      : null;
+  if (byRo?.error) {
+    return NextResponse.json({ error: byRo.error.message }, { status: 500 });
+  }
+  const job = byId.data ?? byRo?.data ?? null;
+  if (!job || !(await canAccessBranch(auth.user, (job as { branch_id?: string | null }).branch_id ?? null))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const isGm = isGmUser(userEmail);

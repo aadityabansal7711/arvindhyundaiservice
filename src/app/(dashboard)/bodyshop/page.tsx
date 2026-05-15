@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { apiGet, apiPost, apiDelete, apiPatch } from "@/lib/api";
+import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
 import type { BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import {
@@ -31,14 +31,6 @@ type StageHistoryRow = {
   remark: string | null;
   gm_remark: string | null;
 };
-type PhotoPreviewState = {
-  title: string;
-  photos: string[];
-  loading: boolean;
-  error: string | null;
-  visibleCount: number;
-};
-
 const statusPillClass = (status: StatusSection) => {
   if (["Approval Pending", "Survey Pending", "DO Awaited"].includes(status)) {
     return "bg-amber-50 text-amber-800 ring-amber-200";
@@ -126,6 +118,8 @@ function BodyshopDashboardPageInner() {
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didFetchOnceRef = useRef(false);
+  const addSubmittingRef = useRef(false);
+  const moveSubmittingRef = useRef(false);
 
   const wait = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -301,6 +295,8 @@ function BodyshopDashboardPageInner() {
   const activeStageCount = derived.filtered.length;
 
   const submitAdd = async () => {
+    if (addSubmittingRef.current) return;
+    addSubmittingRef.current = true;
     setAddSaving(true);
     setAddError(null);
     setAddDebug(null);
@@ -421,11 +417,13 @@ function BodyshopDashboardPageInner() {
       setAddError((e as Error)?.message ?? "Failed to add record");
       setAddDebug(`Failed: ${(e as Error)?.message ?? "Unknown error"}`);
     } finally {
+      addSubmittingRef.current = false;
       setAddSaving(false);
     }
   };
 
   const onDelete = async (id: string) => {
+    if (!window.confirm("Delete this RO? This cannot be undone.")) return;
     const prev = jobs;
     setJobs((p) => p.filter((j) => j.id !== id));
     try {
@@ -500,6 +498,7 @@ function BodyshopDashboardPageInner() {
   const submitMove = async () => {
     if (!moveJob || !moveToStatus) return;
     setMoveDebug("Clicked Move");
+    setMoveError(null);
     const jobId = moveJob.id;
 
     const movementAtRaw = moveForm.movement_at.trim();
@@ -526,17 +525,21 @@ function BodyshopDashboardPageInner() {
       return;
     }
 
+    if (moveSubmittingRef.current) return;
+    moveSubmittingRef.current = true;
     setMoveSaving(true);
-    setMoveError(null);
     try {
       setMoveDebug("Sending status update...");
       // 1) Always move status first so this action never gets blocked by image processing.
-      await apiPatch(`/api/bodyshop-jobs/${encodeURIComponent(moveJob.id)}`, {
-        status_section: moveToStatus,
-        movement_at: movementAtRaw,
-        inputer_remark: inputerRemark,
-        gm_remark: isGm ? moveForm.gm_remark.trim() || null : null,
-      });
+      const moveResult = await apiPatch<{ job?: BodyshopJobWithMeta | null }>(
+        `/api/bodyshop-jobs/${encodeURIComponent(moveJob.id)}`,
+        {
+          status_section: moveToStatus,
+          movement_at: movementAtRaw,
+          inputer_remark: inputerRemark,
+          gm_remark: isGm ? moveForm.gm_remark.trim() || null : null,
+        }
+      );
       setMoveDebug("Status updated");
 
       // 2) Photo upload path for move modal: append one-by-one to avoid giant payloads.
@@ -556,7 +559,7 @@ function BodyshopDashboardPageInner() {
         prev.map((j) =>
           j.id === jobId
             ? {
-                ...j,
+                ...(moveResult.job ?? j),
                 status_section: moveToStatus,
                 ...(appendedPhotos.length > 0
                   ? {
@@ -574,24 +577,24 @@ function BodyshopDashboardPageInner() {
       // Refresh the full board in the background so move feels instant.
       void fetchJobs();
 
-      // Re-sync with server for this specific job so photo counts and the
-      // "View" button reflect what was actually persisted.
-      try {
-        const refreshed = await apiGet<BodyshopJobWithMeta>(
-          `/api/bodyshop-jobs/${encodeURIComponent(jobId)}`
-        );
-        setJobs((prev) =>
-          prev.map((j) =>
-            j.id === jobId
-              ? {
-                  ...refreshed,
-                  photos: Array.isArray(refreshed.photos) ? refreshed.photos : j.photos,
-                }
-              : j
-          )
-        );
-      } catch (e) {
-        console.warn("Failed to refresh moved job detail:", e);
+      if (appendedPhotos.length > 0) {
+        try {
+          const refreshed = await apiGet<BodyshopJobWithMeta>(
+            `/api/bodyshop-jobs/${encodeURIComponent(jobId)}`
+          );
+          setJobs((prev) =>
+            prev.map((j) =>
+              j.id === jobId
+                ? {
+                    ...refreshed,
+                    photos: Array.isArray(refreshed.photos) ? refreshed.photos : j.photos,
+                  }
+                : j
+            )
+          );
+        } catch (e) {
+          console.warn("Failed to refresh moved job detail:", e);
+        }
       }
 
       setMoveJob(null);
@@ -606,6 +609,7 @@ function BodyshopDashboardPageInner() {
       setMoveError((e as Error)?.message ?? "Failed to move record");
       setMoveDebug(`Failed: ${(e as Error)?.message ?? "Unknown error"}`);
     } finally {
+      moveSubmittingRef.current = false;
       setMoveSaving(false);
     }
   };
@@ -738,6 +742,7 @@ function BodyshopDashboardPageInner() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setPhotoPreview({
+                                  jobId: job.id,
                                   title: `RO ${job.ro_no} photos`,
                                   photos: [],
                                   loading: true,
@@ -756,6 +761,7 @@ function BodyshopDashboardPageInner() {
                                       ? refreshed.photos
                                       : [];
                                     setPhotoPreview({
+                                      jobId: job.id,
                                       title: `RO ${refreshed.ro_no} photos`,
                                       photos,
                                       loading: false,
@@ -765,6 +771,7 @@ function BodyshopDashboardPageInner() {
                                   } catch {
                                     // Fallback to whatever board state we currently have.
                                     setPhotoPreview({
+                                      jobId: job.id,
                                       title: `RO ${job.ro_no} photos`,
                                       photos: Array.isArray(job.photos) ? job.photos : [],
                                       loading: false,
@@ -858,101 +865,30 @@ function BodyshopDashboardPageInner() {
 
       {/* Photo preview modal */}
       {photoPreview && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={() => setPhotoPreview(null)}
-        >
-          <div
-            className="bg-white w-full max-w-3xl rounded-t-2xl sm:rounded-2xl border border-slate-200 shadow-xl max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 sm:p-6 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-lg font-bold text-slate-900">
-                    {photoPreview.title}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {photoPreview.loading
-                      ? "Loading photos..."
-                      : `${photoPreview.photos.length} photo${photoPreview.photos.length !== 1 ? "s" : ""}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPhotoPreview(null)}
-                  aria-label="Close"
-                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {photoPreview.error && (
-                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                  {photoPreview.error}
-                </div>
-              )}
-
-              {photoPreview.loading ? (
-                <div className="py-8 text-center text-sm text-slate-500">Loading photos...</div>
-              ) : photoPreview.photos.length === 0 ? (
-                <div className="py-8 text-center text-sm text-slate-500">No photos available.</div>
-              ) : (
-                <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {photoPreview.photos.slice(0, photoPreview.visibleCount).map((src, idx) => (
-                  <a
-                    key={idx}
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
-	                    className="group relative block h-40 rounded-xl overflow-hidden border border-slate-200 bg-slate-50"
-                    title="Open full size"
-                  >
-	                    <Image
-	                      src={src}
-	                      alt={`Photo ${idx + 1}`}
-	                      className="object-cover group-hover:opacity-95"
-	                      fill
-	                      sizes="(min-width: 640px) 33vw, 50vw"
-	                      unoptimized
-	                    />
-                  </a>
-                ))}
-              </div>
-              {photoPreview.visibleCount < photoPreview.photos.length && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPhotoPreview((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              visibleCount: Math.min(prev.visibleCount + 12, prev.photos.length),
-                            }
-                          : prev
-                      )
-                    }
-                    className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  >
-                    Load more photos
-                  </button>
-                </div>
-              )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <PhotoPreviewModal
+          preview={photoPreview}
+          onClose={() => setPhotoPreview(null)}
+          onLoadMore={() =>
+            setPhotoPreview((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    visibleCount: Math.min(prev.visibleCount + 12, prev.photos.length),
+                  }
+                : prev
+            )
+          }
+        />
       )}
 
       {/* Move status modal */}
       {moveJob && moveToStatus && (
         <div
           className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
           onClick={() => {
+            if (moveSaving) return;
             setMoveJob(null);
             setMoveToStatus(null);
             setMoveToOptions(null);
@@ -1022,7 +958,9 @@ function BodyshopDashboardPageInner() {
                 </div>
                 <button
                   type="button"
+                  disabled={moveSaving}
                   onClick={() => {
+                    if (moveSaving) return;
                     setMoveJob(null);
                     setMoveToStatus(null);
                       setMoveToOptions(null);
@@ -1031,7 +969,7 @@ function BodyshopDashboardPageInner() {
                     setMoveViewOpen(false);
                   }}
                   aria-label="Close"
-                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg disabled:opacity-50"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1102,7 +1040,12 @@ function BodyshopDashboardPageInner() {
                   {moveJob?.status_section === "Approval Pending" &&
                   (moveToStatus === "Approval Received" ||
                     moveToStatus === "Total Loss / Disputed") ? (
-                    <span className="text-rose-500">*</span>
+                    <>
+                      <span className="text-rose-500">*</span>{" "}
+                      <span className="text-slate-500 normal-case tracking-normal font-semibold">
+                        (uploading approval screenshot is mandatory)
+                      </span>
+                    </>
                   ) : (
                     <span className="text-slate-400 normal-case tracking-normal font-medium">
                       (optional)
@@ -1182,7 +1125,9 @@ function BodyshopDashboardPageInner() {
             <div className="px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
                 type="button"
+                disabled={moveSaving}
                 onClick={() => {
+                  if (moveSaving) return;
                   setMoveJob(null);
                   setMoveToStatus(null);
                   setMoveToOptions(null);
@@ -1190,7 +1135,7 @@ function BodyshopDashboardPageInner() {
                   setMoveDebug(null);
                   setMoveViewOpen(false);
                 }}
-                className="px-5 py-2.5 bg-white border border-slate-200 text-slate-900 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors"
+                className="px-5 py-2.5 bg-white border border-slate-200 text-slate-900 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -1221,7 +1166,9 @@ function BodyshopDashboardPageInner() {
       {/* View movement modal */}
       {moveJob && moveToStatus && moveViewOpen && (
         <div
-          className="fixed inset-0 z-60 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
           onClick={() => setMoveViewOpen(false)}
         >
           <div
@@ -1310,7 +1257,9 @@ function BodyshopDashboardPageInner() {
       {/* Movement info modal (for View button beside status) */}
       {stageViewOpen && (
         <div
-          className="fixed inset-0 z-55 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-[55] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
           onClick={closeStageView}
         >
           <div
@@ -1418,7 +1367,10 @@ function BodyshopDashboardPageInner() {
       {isAdding && (
         <div
           className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          role="dialog"
+          aria-modal="true"
           onClick={() => {
+            if (addSaving) return;
             setIsAdding(false);
             setAddError(null);
             setAddDebug(null);
@@ -1441,14 +1393,16 @@ function BodyshopDashboardPageInner() {
                 </div>
                 <button
                   type="button"
+                  disabled={addSaving}
                   onClick={() => {
+                    if (addSaving) return;
                     setIsAdding(false);
                     setAddError(null);
                     setAddDebug(null);
                     setAddPhotoFiles([]);
                   }}
                   aria-label="Close"
-                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                  className="p-2.5 -mr-1 text-slate-400 hover:text-slate-600 rounded-lg disabled:opacity-50"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1771,8 +1725,9 @@ function BodyshopDashboardPageInner() {
             <div className="px-4 sm:px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
                 type="button"
+                disabled={addSaving}
                 onClick={() => setIsAdding(false)}
-                className="px-5 py-2.5 bg-white border border-slate-200 text-slate-900 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors"
+                className="px-5 py-2.5 bg-white border border-slate-200 text-slate-900 rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors disabled:opacity-60"
               >
                 Cancel
               </button>

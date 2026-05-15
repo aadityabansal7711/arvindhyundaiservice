@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { readJsonObject, requireOwnerAdmin, validateMutationRequest } from "@/lib/server-auth";
 
 async function checkAuth() {
     const session = await getServerSession(authOptions);
@@ -23,11 +24,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-    const authError = await checkAuth();
-    if (authError) return authError;
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
+    const auth = await requireOwnerAdmin();
+    if (!auth.ok) return auth.response;
     try {
-        const body = await req.json();
-        const name = body?.name?.trim();
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
         if (!name) {
             return NextResponse.json({ error: "Name is required" }, { status: 400 });
         }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import supabaseAdmin from "@/lib/supabase-admin";
+import { requireOwnerAdmin } from "@/lib/server-auth";
 
 /**
  * GET /api/supabase-verify
@@ -8,6 +9,9 @@ import supabaseAdmin from "@/lib/supabase-admin";
  * Use this to confirm "everything is in Supabase" (see SUPABASE.md).
  */
 export async function GET() {
+    const auth = await requireOwnerAdmin();
+    if (!auth.ok) return auth.response;
+
     const result: { database: string; auth: string; ok: boolean } = {
         database: "unknown",
         auth: "unknown",

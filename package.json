@@ -7,6 +7,8 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "test:e2e:api": "playwright test --project=api",
+    "test:e2e:ui": "PLAYWRIGHT_UI=1 playwright test --project=chromium --project=mobile-chrome",
     "postinstall": "npx prisma generate"
   },
   "dependencies": {
@@ -19,14 +21,14 @@
     "date-fns": "^4.1.0",
     "heic2any": "^0.0.4",
     "lucide-react": "^0.575.0",
-    "next": "16.1.6",
+    "next": "^16.2.6",
     "next-auth": "^4.24.13",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tailwind-merge": "^3.5.0",
-    "xlsx": "^0.18.5"
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.19.35",

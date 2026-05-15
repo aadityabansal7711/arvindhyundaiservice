@@ -120,6 +120,7 @@ export default function DataPage() {
     };
 
     const handleDeleteRole = async (r: Role) => {
+        if (!confirm(`Delete role "${r.name}"?`)) return;
         setError("");
         // Optimistic UI: remove role immediately for instant feedback
         setRoles((prev) => prev.filter((role) => role.id !== r.id));
@@ -292,18 +293,20 @@ export default function DataPage() {
                             <>
                                 {activeTab === "roles" && (
                                     <div className="space-y-4">
-                                        <div className="flex justify-end">
-                                            <button
-                                                onClick={() => {
-                                                    setEditingRole(null);
-                                                    setRoleForm({ name: "" });
-                                                    setShowRoleModal(true);
-                                                }}
-                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
-                                            >
-                                                <Plus className="w-4 h-4" /> Add role
-                                            </button>
-                                        </div>
+                                        {canEditData && (
+                                            <div className="flex justify-end">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingRole(null);
+                                                        setRoleForm({ name: "" });
+                                                        setShowRoleModal(true);
+                                                    }}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
+                                                >
+                                                    <Plus className="w-4 h-4" /> Add role
+                                                </button>
+                                            </div>
+                                        )}
                                         <table className="w-full text-left border-collapse">
                                             <thead>
                                                 <tr className="border-b border-slate-200">
@@ -317,9 +320,11 @@ export default function DataPage() {
                                                         <td className="py-3 font-medium text-slate-900">{r.name}</td>
                                                         <td className="py-3 text-right">
                                                             {canEditData && (
-                                                                <button onClick={() => openRoleEdit(r)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                <button onClick={() => openRoleEdit(r)} aria-label={`Edit role ${r.name}`} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                                             )}
-                                                            <button onClick={() => handleDeleteRole(r)} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                            {canEditData && (
+                                                                <button onClick={() => handleDeleteRole(r)} aria-label={`Delete role ${r.name}`} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -333,18 +338,20 @@ export default function DataPage() {
 
                                 {activeTab === "branches" && (
                                     <div className="space-y-4">
-                                        <div className="flex justify-end">
-                                            <button
-                                                onClick={() => {
-                                                    setEditingBranch(null);
-                                                    setBranchForm({ name: "" });
-                                                    setShowBranchModal(true);
-                                                }}
-                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
-                                            >
-                                                <Plus className="w-4 h-4" /> Add branch
-                                            </button>
-                                        </div>
+                                        {canEditData && (
+                                            <div className="flex justify-end">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingBranch(null);
+                                                        setBranchForm({ name: "" });
+                                                        setShowBranchModal(true);
+                                                    }}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700"
+                                                >
+                                                    <Plus className="w-4 h-4" /> Add branch
+                                                </button>
+                                            </div>
+                                        )}
                                         <table className="w-full text-left border-collapse">
                                             <thead>
                                                 <tr className="border-b border-slate-200">
@@ -358,9 +365,11 @@ export default function DataPage() {
                                                         <td className="py-3 font-medium text-slate-900">{b.name}</td>
                                                         <td className="py-3 text-right">
                                                             {canEditData && (
-                                                                <button onClick={() => openBranchEdit(b)} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                <button onClick={() => openBranchEdit(b)} aria-label={`Edit branch ${b.name}`} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                                             )}
-                                                            <button onClick={() => handleDeleteBranch(b)} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                            {canEditData && (
+                                                                <button onClick={() => handleDeleteBranch(b)} aria-label={`Delete branch ${b.name}`} className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -381,19 +390,21 @@ export default function DataPage() {
                                                 <div key={group.key} className="border border-slate-200 rounded-xl overflow-hidden">
                                                     <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
                                                         <span className="font-bold text-slate-800">{group.label}</span>
-                                                        <button
-                                                            onClick={() => {
-                                                                setEditingOption(null);
-                                                                setOptionForm({
-                                                                    groupKey: group.key,
-                                                                    label: "",
-                                                                });
-                                                                setShowOptionModal(true);
-                                                            }}
-                                                            className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
-                                                        >
-                                                            <Plus className="w-3.5 h-3.5" /> Add
-                                                        </button>
+                                                        {canEditData && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingOption(null);
+                                                                    setOptionForm({
+                                                                        groupKey: group.key,
+                                                                        label: "",
+                                                                    });
+                                                                    setShowOptionModal(true);
+                                                                }}
+                                                                className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                                                            >
+                                                                <Plus className="w-3.5 h-3.5" /> Add
+                                                            </button>
+                                                        )}
                                                     </div>
                                                     <table className="w-full text-left border-collapse">
                                                         <thead>
@@ -408,9 +419,11 @@ export default function DataPage() {
                                                                     <td className="px-4 py-2 font-medium text-slate-900">{o.label}</td>
                                                                     <td className="px-4 py-2 text-right">
                                                                         {canEditData && (
-                                                                            <button onClick={() => openOptionEdit(o)} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                                                            <button onClick={() => openOptionEdit(o)} aria-label={`Edit option ${o.label}`} className="p-1.5 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                                                         )}
-                                                                        <button onClick={() => handleDeleteOption(o)} className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                                        {canEditData && (
+                                                                            <button onClick={() => handleDeleteOption(o)} aria-label={`Delete option ${o.label}`} className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                                                                        )}
                                                                     </td>
                                                                 </tr>
                                                             ))}

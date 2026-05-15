@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Lock, Mail, Loader2, Car } from "lucide-react";
 
 function LoginForm() {
@@ -11,7 +11,6 @@ function LoginForm() {
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
-    const router = useRouter();
     const searchParams = useSearchParams();
 
     useEffect(() => {

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutGrid } from "lucide-react";
 import { apiGet } from "@/lib/api";
-import supabase from "@/lib/supabase";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import type { StatusSection } from "@/lib/bodyshop-types";
 
@@ -50,7 +49,6 @@ export function SidebarStages() {
     };
     void doFetch();
 
-    // Realtime updates (instant refresh when jobs change)
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleRefresh = () => {
       if (cancelled) return;
@@ -60,34 +58,20 @@ export function SidebarStages() {
       }, 600);
     };
 
-    const channel = supabase
-      .channel("bodyshop_jobs_counts")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bodyshop_jobs" },
-        () => scheduleRefresh()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bodyshop_job_stages" },
-        () => scheduleRefresh()
-      )
-      .subscribe();
-
     const onLocalRefresh = () => {
       scheduleRefresh();
     };
     window.addEventListener("bodyshop:counts-refresh", onLocalRefresh);
 
-    // Fallback polling in case realtime is not enabled.
-    const poll = setInterval(() => scheduleRefresh(), 30000);
+    // Poll through the authenticated API instead of exposing bodyshop tables to
+    // the public Supabase anon key just for realtime count updates.
+    const poll = setInterval(() => scheduleRefresh(), 15000);
 
     return () => {
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
       clearInterval(poll);
       window.removeEventListener("bodyshop:counts-refresh", onLocalRefresh);
-      void supabase.removeChannel(channel);
     };
   }, []);
 

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
 import supabaseAdmin from "@/lib/supabase-admin";
-import { authOptions } from "@/lib/auth-options";
 import { addMeta } from "@/lib/bodyshop-repo";
 import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
-import { bypassUserDeniesBranchAccess } from "@/lib/bypass-only-user";
+import {
+  canAccessBranch,
+  enforceRateLimit,
+  readJsonObject,
+  rejectCrossSiteMutation,
+  requireBodyshopAccess,
+  requireSession,
+  validateMutationRequest,
+} from "@/lib/server-auth";
 
 // Ensure the job detail (including photos array) is never served stale.
 export const dynamic = "force-dynamic";
@@ -17,6 +23,7 @@ const HIDDEN_TABLE = "bodyshop_job_hidden";
 const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
 const JOB_DETAIL_SELECT =
   "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,surveyor,service_advisor,mobile_no,claim_intimation_date,claim_no,hap_status,survey_date,approval_date,advisor_remark,whatsapp_date,tentative_labor,promised_date,general_remark,replace_panels,dent_panels,mrs,mrs_date,order_no,order_date,eta_date,received_date,status_section,billing_status,parts_status,created_at,updated_at";
+const PATCH_BASE_SELECT = `${JOB_DETAIL_SELECT},photos`;
 type CacheEntry<T> = { value: T; expiresAt: number };
 const photoCache = new Map<string, CacheEntry<{ id: string; ro_no: string; photos: string[] }>>();
 
@@ -165,10 +172,10 @@ export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireBodyshopAccess();
+  if (!auth.ok) return auth.response;
+  const rateLimitError = enforceRateLimit(request, "bodyshop-update", 90, 60_000, auth.user.id ?? auth.user.email);
+  if (rateLimitError) return rateLimitError;
 
   const { id } = await context.params;
   const url = new URL(request.url);
@@ -222,7 +229,7 @@ export async function GET(
 
   if (row) {
     const rawBranch = (row as { branch_id?: string | null }).branch_id;
-    if (await bypassUserDeniesBranchAccess((session.user as any)?.email, rawBranch ?? null)) {
+    if (!(await canAccessBranch(auth.user, rawBranch ?? null))) {
       return NextResponse.json({ error: "Job not found" }, { status: 404 });
     }
     if (photosOnly) {
@@ -264,19 +271,25 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const mutationError = validateMutationRequest(request);
+  if (mutationError) return mutationError;
+
+  const auth = await requireBodyshopAccess();
+  if (!auth.ok) return auth.response;
 
   const { id } = await context.params;
   photoCache.delete(id);
-  const body = await request.json();
+  const parsed = await readJsonObject(request);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
 
-  const userEmail = (session.user as any)?.email as string | undefined;
+  const userEmail = auth.user.email ?? undefined;
   const isGm = isGmUser(userEmail);
 
   const toStatus = body.status_section as StatusSection | undefined;
+  if (toStatus && !(STATUS_SECTION_ORDER as readonly string[]).includes(toStatus)) {
+    return NextResponse.json({ error: "Invalid status_section" }, { status: 400 });
+  }
   // `remark` is the legacy column. Treat it as "inputer remark" for backward compatibility.
   const inputerRemark =
     (body.inputer_remark as string | undefined) ??
@@ -303,9 +316,10 @@ export async function PATCH(
     changed_at = movementDate.toISOString();
   }
 
+  const needsPhotos = photosAppend.length > 0 || Object.prototype.hasOwnProperty.call(body, "photos");
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from(TABLE_NAME)
-    .select("*")
+    .select(needsPhotos ? PATCH_BASE_SELECT : JOB_DETAIL_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -326,13 +340,13 @@ export async function PATCH(
   }
 
   const baseBranchId = (mergedBase.branch_id as string | null) ?? null;
-  if (await bypassUserDeniesBranchAccess(userEmail, baseBranchId)) {
+  if (!(await canAccessBranch(auth.user, baseBranchId))) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
   if (Object.prototype.hasOwnProperty.call(body, "branch_id")) {
     const nextBid = body.branch_id ? String(body.branch_id).trim() : null;
-    if (await bypassUserDeniesBranchAccess(userEmail, nextBid)) {
+    if (!(await canAccessBranch(auth.user, nextBid))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
@@ -408,9 +422,11 @@ export async function PATCH(
     merged.created_at = (merged.created_at as string) || now;
   }
 
-  const { error: updateError } = await supabaseAdmin
+  const { data: updatedRows, error: updateError } = await supabaseAdmin
     .from(TABLE_NAME)
-    .upsert(merged as unknown as BodyshopJob, { onConflict: "id" });
+    .update(merged as unknown as BodyshopJob)
+    .eq("id", id)
+    .select(JOB_DETAIL_SELECT);
 
   if (updateError) {
     return NextResponse.json(
@@ -418,6 +434,7 @@ export async function PATCH(
       { status: 500 }
     );
   }
+  const updated = updatedRows?.[0];
 
   if (toStatus && toStatus !== fromStatus) {
     const baseStagePayload: Record<string, unknown> = {
@@ -459,22 +476,28 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    job: updated ? addMeta(updated as BodyshopJob) : null,
+  });
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const mutationError = rejectCrossSiteMutation(request);
+  if (mutationError) return mutationError;
+
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const rateLimitError = enforceRateLimit(request, "bodyshop-delete", 15, 60_000, auth.user.id ?? auth.user.email);
+  if (rateLimitError) return rateLimitError;
 
   // Requirement: only this specific admin user should be able to delete ROs.
   // This endpoint tombstones + deletes the bodyshop record, which represents an RO in the board UI.
   const allowedRoDeleteEmail = "mayank.arvind.bansal@gmail.com";
-  const email = (session.user as any)?.email;
+  const email = auth.user.email;
   const isAllowedAdmin =
     typeof email === "string" && email.toLowerCase() === allowedRoDeleteEmail;
   if (!isAllowedAdmin) {

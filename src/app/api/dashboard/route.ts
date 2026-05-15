@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
 import { listBodyshopJobs } from "@/lib/bodyshop-repo";
 import { getBranchScopeForSessionUser } from "@/lib/bypass-only-user";
+import { requireBodyshopAccess } from "@/lib/server-auth";
 
 type DashboardPayload = {
     stats: {
@@ -40,13 +39,11 @@ function setCachedDashboard(key: string, value: DashboardPayload) {
 }
 
 export async function GET(_req: NextRequest) {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const auth = await requireBodyshopAccess();
+    if (!auth.ok) return auth.response;
 
     try {
-        const scope = await getBranchScopeForSessionUser(session.user as any);
+        const scope = await getBranchScopeForSessionUser(auth.user);
         const cacheKey =
             scope.kind === "all" ? "dashboard:all" : `dashboard:${scope.ids.join(",")}`;
         const cached = getCachedDashboard(cacheKey);

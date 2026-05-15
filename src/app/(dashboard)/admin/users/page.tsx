@@ -322,6 +322,7 @@ export default function UserManagementPage() {
                                 : "Manage personnel and roles."}
                         </p>
                     </div>
+                    {canEditUsers && (
                     <div className="flex items-center gap-2">
                         {view === "advisors" && (
                             <button
@@ -353,6 +354,7 @@ export default function UserManagementPage() {
                             {view === "advisors" ? "Add Dropdown Advisor" : "Add User"}
                         </button>
                     </div>
+                    )}
                 </div>
 
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -447,15 +449,17 @@ export default function UserManagementPage() {
                                                         <Edit2 className="w-4 h-4" />
                                                     </button>
                                                 )}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteClick(u)}
-                                                    disabled={deletingId === u.id}
-                                                    className="p-2 hover:bg-rose-50 rounded-lg transition-colors text-slate-400 hover:text-rose-600 disabled:opacity-50"
-                                                    aria-label="Delete user"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {canEditUsers && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteClick(u)}
+                                                        disabled={deletingId === u.id}
+                                                        className="p-2 hover:bg-rose-50 rounded-lg transition-colors text-slate-400 hover:text-rose-600 disabled:opacity-50"
+                                                        aria-label={`Delete user ${u.name}`}
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -492,14 +496,16 @@ export default function UserManagementPage() {
                                                         <Edit2 className="w-4 h-4" />
                                                     </button>
                                                 )}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeleteAdvisor(a)}
-                                                    className="p-2 hover:bg-rose-50 rounded-lg transition-colors text-slate-400 hover:text-rose-600"
-                                                    aria-label="Delete advisor"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {canEditUsers && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteAdvisor(a)}
+                                                        className="p-2 hover:bg-rose-50 rounded-lg transition-colors text-slate-400 hover:text-rose-600"
+                                                        aria-label={`Delete advisor ${a.label}`}
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

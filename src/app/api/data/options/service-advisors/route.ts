@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
+import { isOwnerUser } from "@/lib/owner-access";
+import { readJsonObject, validateMutationRequest } from "@/lib/server-auth";
 
 export async function GET() {
     const session = await getServerSession(authOptions);
@@ -26,6 +28,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
     const session = await getServerSession(authOptions);
     const permissions = Array.isArray((session?.user as { permissions?: string[] } | undefined)?.permissions)
         ? ((session?.user as { permissions?: string[] }).permissions ?? [])
@@ -33,9 +37,13 @@ export async function POST(req: NextRequest) {
     if (!session || !permissions.includes("users.manage")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!isOwnerUser(session.user)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     try {
-        const body = await req.json();
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
         const rows = Array.isArray(body?.rows) ? body.rows : [];
         if (rows.length === 0) {
             return NextResponse.json({ error: "rows are required" }, { status: 400 });

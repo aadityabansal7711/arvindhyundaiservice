@@ -59,6 +59,13 @@ create index if not exists idx_bodyshop_jobs_ro_date
 create index if not exists idx_bodyshop_jobs_promised_date
   on public.bodyshop_jobs (promised_date);
 
+create index if not exists idx_bodyshop_jobs_branch_status_ro_date
+  on public.bodyshop_jobs (branch_id, status_section, ro_date desc);
+
+create index if not exists idx_bodyshop_jobs_open_board
+  on public.bodyshop_jobs (status_section, ro_date desc)
+  where status_section <> 'Delivered';
+
 -- Stage history for movement across workflow buckets
 create table if not exists public.bodyshop_job_stages (
   id uuid primary key default gen_random_uuid(),
@@ -86,12 +93,13 @@ create table if not exists public.bodyshop_job_hidden (
 );
 
 -- Permissions (Supabase)
--- If your project has tightened schema privileges, the API can fail with:
--- "permission denied for schema public"
-grant usage on schema public to anon, authenticated, service_role;
-grant select, insert, update, delete on table public.bodyshop_jobs to anon, authenticated, service_role;
-grant select, insert, update, delete on table public.bodyshop_job_stages to anon, authenticated, service_role;
-grant select, insert, update, delete on table public.bodyshop_job_hidden to anon, authenticated, service_role;
-
--- Ensure future tables in public are accessible too (optional but helpful).
-alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated, service_role;
+-- The Next.js API uses the service-role key server-side. Do not expose these
+-- operational tables to the public anon key; staff permissions are enforced in
+-- the application API layer.
+grant usage on schema public to service_role;
+revoke all on table public.bodyshop_jobs from anon, authenticated;
+revoke all on table public.bodyshop_job_stages from anon, authenticated;
+revoke all on table public.bodyshop_job_hidden from anon, authenticated;
+grant select, insert, update, delete on table public.bodyshop_jobs to service_role;
+grant select, insert, update, delete on table public.bodyshop_job_stages to service_role;
+grant select, insert, update, delete on table public.bodyshop_job_hidden to service_role;

@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import supabaseAdmin from "@/lib/supabase-admin";
+import { isOwnerUser } from "@/lib/owner-access";
+import { enforceRateLimit, readJsonObject, validateMutationRequest } from "@/lib/server-auth";
+import { logEvent } from "@/lib/server-log";
 
 /** Every new user gets this temporary password; they must change it on first login. */
 const INITIAL_PASSWORD = "admin123";
@@ -39,13 +42,23 @@ export async function GET(_req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    const mutationError = validateMutationRequest(req);
+    if (mutationError) return mutationError;
+
     const session = await getServerSession(authOptions);
     if (!session || !(session.user as any).permissions.includes("users.manage")) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!isOwnerUser(session.user)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const currentUser = session.user as { id?: string; email?: string };
+    const rateLimitError = enforceRateLimit(req, "admin-user-create", 20, 60_000, currentUser.id ?? currentUser.email);
+    if (rateLimitError) return rateLimitError;
 
     try {
-        const body = await req.json();
+        const body = await readJsonObject(req);
+        if (body instanceof NextResponse) return body;
         const { name, email, phone, roleId, branchId, branchIds } = body;
 
         if (typeof name !== "string" || !name.trim()) {
@@ -53,6 +66,10 @@ export async function POST(req: NextRequest) {
         }
         if (typeof email !== "string" || !email.trim()) {
             return NextResponse.json({ error: "Email is required" }, { status: 400 });
+        }
+        const emailNorm = email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+            return NextResponse.json({ error: "Valid email is required" }, { status: 400 });
         }
         if (typeof roleId !== "string" || !roleId) {
             return NextResponse.json({ error: "Role is required" }, { status: 400 });
@@ -80,9 +97,7 @@ export async function POST(req: NextRequest) {
             )
         );
 
-        const existing = await prisma.user.findUnique({
-            where: { email: email.trim().toLowerCase() },
-        });
+        const existing = await prisma.user.findUnique({ where: { email: emailNorm } });
         if (existing) {
             return NextResponse.json(
                 { error: "A user with this email already exists" },
@@ -90,7 +105,6 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const emailNorm = email.trim().toLowerCase();
         const passwordHash = await bcrypt.hash(INITIAL_PASSWORD, 10);
 
         const user = await prisma.user.create({
@@ -128,7 +142,10 @@ export async function POST(req: NextRequest) {
             }
         } catch (supabaseErr: unknown) {
             // User exists in Prisma; log and continue (they can use legacy bcrypt until migrated)
-            console.error("Supabase Auth create user failed:", supabaseErr);
+            logEvent("error", "admin_user.supabase_create_failed", {
+                email: emailNorm,
+                message: supabaseErr instanceof Error ? supabaseErr.message : String(supabaseErr),
+            });
         }
 
         return NextResponse.json(user);

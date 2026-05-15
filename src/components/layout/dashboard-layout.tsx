@@ -1,13 +1,12 @@
 "use client";
 
-import { Suspense, useState, useEffect, useRef, ReactNode } from "react";
+import { Suspense, useState, useEffect, ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
     Users,
     LogOut,
-    Search,
     User as UserIcon,
     Menu,
     X,
@@ -33,26 +32,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const pathname = usePathname();
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const urlQ = searchParams.get("q") ?? "";
-    const [headerSearch, setHeaderSearch] = useState(urlQ);
-    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    useEffect(() => {
-        setHeaderSearch(urlQ);
-    }, [urlQ]);
-    const onHeaderSearchChange = (value: string) => {
-        setHeaderSearch(value);
-        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = setTimeout(() => {
-            const params = new URLSearchParams(searchParams.toString());
-            if (value.trim()) params.set("q", value);
-            else params.delete("q");
-            const qs = params.toString();
-            const onBodyshop = pathname.startsWith("/bodyshop") && !pathname.startsWith("/bodyshop/delivered");
-            const target = onBodyshop ? `${pathname}${qs ? `?${qs}` : ""}` : `/bodyshop${qs ? `?${qs}` : ""}`;
-            router.replace(target, { scroll: false });
-        }, 200);
-    };
     const { data: session } = useSession();
 
     useEffect(() => {
@@ -300,17 +279,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Workspace</div>
                             <div className="text-sm font-bold text-slate-900 truncate">{pageTitle}</div>
                         </div>
-                        {pathname !== "/ro/new" && (
-                            <div className="relative hidden md:block w-64 lg:w-96 flex-shrink-0">
-                                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                <input
-                                    placeholder="Search RO, Reg No, Customer..."
-                                    value={headerSearch}
-                                    onChange={(e) => onHeaderSearchChange(e.target.value)}
-                                    className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/80 border border-slate-200/80 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:bg-white shadow-sm"
-                                />
-                            </div>
-                        )}
                     </div>
 
                     <div className="flex items-center gap-2 lg:gap-4 flex-shrink-0">
