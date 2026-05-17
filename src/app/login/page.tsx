@@ -33,7 +33,9 @@ function LoginForm() {
             });
 
             if (result?.error) {
-                setError("Invalid email or password");
+                // Surface the real reason thrown from authorize() (e.g. rate limit,
+                // inactive user, invalid password) instead of a single generic string.
+                setError(result.error === "CredentialsSignin" ? "Invalid email or password" : result.error);
             } else if (result?.ok) {
                 // Force a full navigation so session (including mustChangePassword) is available on next page
                 if (password === "admin123") {
