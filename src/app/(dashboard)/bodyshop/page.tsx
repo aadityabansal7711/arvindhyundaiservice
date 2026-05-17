@@ -441,6 +441,10 @@ function BodyshopDashboardPageInner() {
       return ["Approval Received", "Total Loss / Disputed"];
     }
 
+    if (current === "Customer Awaited") {
+      return ["Delivered"];
+    }
+
     const idx = STATUS_SECTION_ORDER.indexOf(current);
     if (idx < 0 || idx >= STATUS_SECTION_ORDER.length - 1) return null;
     return [STATUS_SECTION_ORDER[idx + 1]];
