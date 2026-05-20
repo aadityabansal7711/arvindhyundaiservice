@@ -79,6 +79,9 @@ function getAllowedNextStatuses(
   if (current === "Approval Pending") {
     return ["Approval Received", "Total Loss / Disputed"];
   }
+  if (current === "Customer Awaited") {
+    return ["Delivered"];
+  }
   const idx = (STATUS_SECTION_ORDER as readonly string[]).indexOf(current);
   if (idx < 0 || idx >= STATUS_SECTION_ORDER.length - 1) return [];
   return [STATUS_SECTION_ORDER[idx + 1]];
