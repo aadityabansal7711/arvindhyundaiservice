@@ -20,6 +20,7 @@ import {
   compressImageToMax100KB,
 } from "@/lib/compress-image";
 import { isOwnerUser } from "@/lib/owner-access";
+import { getRoPrefixForBranchName, RO_PREFIX_SEPARATOR } from "@/lib/ro-prefix";
 
 type DropdownOption = { id: string; label: string; value: string };
 type Branch = { id: string; name: string };
@@ -301,8 +302,8 @@ function BodyshopDashboardPageInner() {
     setAddError(null);
     setAddDebug(null);
     try {
-      const ro = addForm.ro_no.trim();
-      if (!ro) {
+      const rawRo = addForm.ro_no.trim();
+      if (!rawRo) {
         setAddError("R/O No is required");
         return;
       }
@@ -317,6 +318,10 @@ function BodyshopDashboardPageInner() {
         setAddError("Please select a branch.");
         return;
       }
+      // Mirror the server-side prefix so the refresh GET below hits the right id.
+      const selectedBranchName = branchNameById.get(addForm.branch_id) ?? null;
+      const branchPrefix = getRoPrefixForBranchName(selectedBranchName);
+      const ro = branchPrefix ? `${branchPrefix}${RO_PREFIX_SEPARATOR}${rawRo}` : rawRo;
       if (addPhotoFiles.length === 0) {
         setAddError("Please add at least one photo before creating a new RO.");
         return;
@@ -1462,15 +1467,29 @@ function BodyshopDashboardPageInner() {
                   <label className="block text-xs font-bold text-black uppercase tracking-widest">
                     R/O No <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={addForm.ro_no}
-                    onChange={(e) =>
-                      setAddForm((p) => ({ ...p, ro_no: e.target.value }))
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white"
-                    required
-                  />
+                  {(() => {
+                    const selectedBranchName = branchNameById.get(addForm.branch_id) ?? null;
+                    const prefix = getRoPrefixForBranchName(selectedBranchName);
+                    return (
+                      <div className="flex items-stretch w-full bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:bg-white">
+                        {prefix && (
+                          <span className="px-3 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 border-r border-slate-200 select-none">
+                            {prefix}{RO_PREFIX_SEPARATOR}
+                          </span>
+                        )}
+                        <input
+                          type="text"
+                          value={addForm.ro_no}
+                          onChange={(e) =>
+                            setAddForm((p) => ({ ...p, ro_no: e.target.value }))
+                          }
+                          placeholder={prefix ? "123" : "Select branch first"}
+                          className="flex-1 px-4 py-2.5 bg-transparent text-sm focus:outline-none"
+                          required
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-2">
                   <label className="block text-xs font-bold text-black uppercase tracking-widest">

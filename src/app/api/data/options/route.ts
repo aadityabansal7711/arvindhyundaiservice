@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth-options";
 import prisma from "@/lib/prisma";
-import { getBypassBranchId, isBypassOnlyUser } from "@/lib/bypass-only-user";
+import { getBypassBranchId, getCachedUserBranchAssignments, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { isOwnerUser } from "@/lib/owner-access";
 import { readJsonObject, validateMutationRequest } from "@/lib/server-auth";
 
@@ -33,13 +33,9 @@ export async function GET(req: NextRequest) {
                     const bid = await getBypassBranchId();
                     allowed = bid ? [bid] : [];
                 } else {
-                    const assignedBranches =
-                        userId
-                            ? await prisma.user.findUnique({
-                                  where: { id: userId },
-                                  select: { branchId: true, branches: { select: { branchId: true } } },
-                              })
-                            : null;
+                    const assignedBranches = userId
+                        ? await getCachedUserBranchAssignments(userId)
+                        : null;
 
                     // Avoid JWT-cached `branchIds` (NextAuth JWT won't auto-refresh on permission/branch changes)
                     const assignedBranchIds: string[] =

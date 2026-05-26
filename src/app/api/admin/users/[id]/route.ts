@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { enforceRateLimit, readJsonObject, rejectCrossSiteMutation, requireOwnerAdmin, validateMutationRequest } from "@/lib/server-auth";
+import { invalidateBranchScopeCache } from "@/lib/bypass-only-user";
 
 async function checkAuth() {
     const auth = await requireOwnerAdmin();
@@ -71,6 +72,7 @@ export async function PATCH(
             });
         });
 
+        invalidateBranchScopeCache(id);
         return NextResponse.json(user);
     } catch (error: any) {
         if (error.code === "P2025") {
@@ -110,6 +112,7 @@ export async function DELETE(
             where: { id },
         });
 
+        invalidateBranchScopeCache(id);
         return NextResponse.json({ success: true });
     } catch (error: any) {
         if (error.code === "P2025") {

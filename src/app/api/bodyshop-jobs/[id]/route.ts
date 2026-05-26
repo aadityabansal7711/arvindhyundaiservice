@@ -343,15 +343,21 @@ export async function PATCH(
   }
 
   const baseBranchId = (mergedBase.branch_id as string | null) ?? null;
-  if (!(await canAccessBranch(auth.user, baseBranchId))) {
+  const hasNextBranch = Object.prototype.hasOwnProperty.call(body, "branch_id");
+  const nextBid = hasNextBranch
+    ? body.branch_id
+      ? String(body.branch_id).trim()
+      : null
+    : null;
+  const [baseAllowed, nextAllowed] = await Promise.all([
+    canAccessBranch(auth.user, baseBranchId),
+    hasNextBranch ? canAccessBranch(auth.user, nextBid) : Promise.resolve(true),
+  ]);
+  if (!baseAllowed) {
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
-
-  if (Object.prototype.hasOwnProperty.call(body, "branch_id")) {
-    const nextBid = body.branch_id ? String(body.branch_id).trim() : null;
-    if (!(await canAccessBranch(auth.user, nextBid))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  if (hasNextBranch && !nextAllowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const merged: Record<string, unknown> = { ...mergedBase };

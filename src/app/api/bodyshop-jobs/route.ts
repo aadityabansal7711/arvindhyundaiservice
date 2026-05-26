@@ -6,6 +6,7 @@ import { getBypassBranchId, getBranchScopeForSessionUser, isBypassOnlyUser } fro
 import { getBranchNameMap } from "@/lib/branch-list";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import { enforceRateLimit, readJsonObject, requireBodyshopAccess, validateMutationRequest } from "@/lib/server-auth";
+import { applyRoPrefix, getRoPrefixForBranchName } from "@/lib/ro-prefix";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
 // dynamic behavior so Next does not cache stale responses.
@@ -470,13 +471,30 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const id = asText(body?.id ?? body?.ro_no ?? body?.roNo);
-  if (!id) {
+  const rawId = asText(body?.id ?? body?.ro_no ?? body?.roNo);
+  if (!rawId) {
     return NextResponse.json(
       { error: "id (or ro_no) is required" },
       { status: 400 }
     );
   }
+
+  // Apply compulsory branch prefix (BP/FT/DH) so per-branch 1..N series cannot
+  // collide across branches. Branch name is resolved from the (already
+  // permission-checked) branch_id on the request.
+  const branchIdForPrefix = asText(body?.branch_id);
+  const branchNameMap = await getBranchNameMap().catch(() => null);
+  const branchName = branchIdForPrefix ? branchNameMap?.get(branchIdForPrefix) ?? null : null;
+  const branchPrefix = getRoPrefixForBranchName(branchName);
+  if (branchIdForPrefix && branchName && !branchPrefix) {
+    // Branch exists but is not in the prefix table — fail loudly rather than
+    // silently letting a non-prefixed RO into the system.
+    return NextResponse.json(
+      { error: `No RO prefix configured for branch "${branchName}". Update src/lib/ro-prefix.ts.` },
+      { status: 400 }
+    );
+  }
+  const id = applyRoPrefix(branchName, rawId);
 
   const now = new Date().toISOString();
   const requestedStatus = body?.status_section ?? "Document Pending";
@@ -485,7 +503,7 @@ export async function POST(request: NextRequest) {
   }
   const payload: Partial<BodyshopJob> & { id: string; updated_at: string } = {
     id,
-    ro_no: asText(body?.ro_no ?? body?.roNo) ?? id,
+    ro_no: id,
     branch_id: asText(body?.branch_id),
     ro_date: asText(body?.ro_date),
     reg_no: asText(body?.reg_no),
@@ -522,6 +540,23 @@ export async function POST(request: NextRequest) {
 
   // Ensure created_at exists for Supabase row creation
   (payload as any).created_at = body?.created_at ?? now;
+
+  // Guard against duplicate RO numbers silently overwriting an existing job.
+  // Without this check the upsert below would replace the existing row.
+  const { data: existing, error: existingErr } = await supabaseAdmin
+    .from("bodyshop_jobs")
+    .select("id")
+    .eq("id", payload.id)
+    .maybeSingle();
+  if (existingErr) {
+    return NextResponse.json({ error: existingErr.message }, { status: 500 });
+  }
+  if (existing) {
+    return NextResponse.json(
+      { error: `RO number "${payload.id}" already exists. Please use a different RO number.` },
+      { status: 409 }
+    );
+  }
 
   const { error } = await supabaseAdmin
     .from("bodyshop_jobs")

@@ -40,6 +40,47 @@ export async function bypassUserDeniesBranchAccess(
 
 export type BranchScope = { kind: "all" } | { kind: "ids"; ids: string[] };
 
+// Cache the prisma user-assignments lookup per user.id. This was running on
+// every API request (bodyshop list/POST, dashboard, server-auth) and was the
+// dominant cold-start cost. Branch assignments change rarely, so a short TTL
+// is safe; updates propagate within ASSIGNMENTS_TTL_MS.
+type AssignmentsRow = { branchId: string | null; branches: { branchId: string }[] } | null;
+const ASSIGNMENTS_TTL_MS = 30_000;
+const assignmentsCache = new Map<string, { data: AssignmentsRow; expiresAt: number }>();
+const assignmentsInflight = new Map<string, Promise<AssignmentsRow>>();
+
+function loadAssignments(userId: string): Promise<AssignmentsRow> {
+    const now = Date.now();
+    const hit = assignmentsCache.get(userId);
+    if (hit && hit.expiresAt > now) return Promise.resolve(hit.data);
+    const existing = assignmentsInflight.get(userId);
+    if (existing) return existing;
+    const p = prisma.user
+        .findUnique({
+            where: { id: userId },
+            select: { branchId: true, branches: { select: { branchId: true } } },
+        })
+        .then((row) => {
+            assignmentsCache.set(userId, { data: row as AssignmentsRow, expiresAt: Date.now() + ASSIGNMENTS_TTL_MS });
+            return row as AssignmentsRow;
+        })
+        .finally(() => {
+            assignmentsInflight.delete(userId);
+        });
+    assignmentsInflight.set(userId, p);
+    return p;
+}
+
+export function invalidateBranchScopeCache(userId?: string) {
+    if (userId) assignmentsCache.delete(userId);
+    else assignmentsCache.clear();
+}
+
+/** Cached read of a user's branch assignments. Same TTL as the scope cache. */
+export async function getCachedUserBranchAssignments(userId: string) {
+    return loadAssignments(userId);
+}
+
 /**
  * Branch visibility for RO APIs. Bypass-only user is always restricted to the Bypass
  * branch, regardless of role permissions.
@@ -65,12 +106,7 @@ export async function getBranchScopeForSessionUser(user: {
 
     const canViewMultiBranches = permissions.includes("branches.view_multi");
     const freshAssignments =
-        typeof user?.id === "string"
-            ? await prisma.user.findUnique({
-                  where: { id: user.id },
-                  select: { branchId: true, branches: { select: { branchId: true } } },
-              })
-            : null;
+        typeof user?.id === "string" ? await loadAssignments(user.id) : null;
     const assignedBranchIds: string[] =
         freshAssignments?.branches?.map((ub) => ub.branchId).filter(Boolean) ??
         (Array.isArray(user?.branchIds) ? user.branchIds : []);
