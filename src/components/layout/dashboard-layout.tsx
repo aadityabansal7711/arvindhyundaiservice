@@ -16,13 +16,24 @@ import {
     PackageCheck,
     PanelLeftClose,
     PanelLeftOpen,
+    BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isOwnerUser } from "@/lib/owner-access";
 import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
 
-const sidebarItems = [
+type SidebarItem = {
+    name: string;
+    href: string;
+    icon: typeof KanbanSquare;
+    permission?: string;
+    ownerOnly?: boolean;
+};
+
+const sidebarItems: SidebarItem[] = [
     { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
     { name: "Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
+    { name: "Analytics", href: "/analytics", icon: BarChart3, ownerOnly: true },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
@@ -49,7 +60,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         "/data",
     ]);
 
+    const isOwner = isOwnerUser(session?.user);
+
     const filteredSidebarItems = sidebarItems.filter((item) => {
+        if (item.ownerOnly && !isOwner) {
+            return false;
+        }
         if (item.permission && !userPermissions.includes(item.permission)) {
             return false;
         }
@@ -79,7 +95,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                     ? "User Management"
                     : pathname.startsWith("/data")
                         ? "Data Library"
-                        : "Service Operations";
+                        : pathname.startsWith("/analytics")
+                            ? "Analytics"
+                            : "Service Operations";
     const isSidebarItemActive = (href: string) => {
         if (href === "/bodyshop") {
             // `/bodyshop/delivered` should not mark "Bodyshop Board" as active.
