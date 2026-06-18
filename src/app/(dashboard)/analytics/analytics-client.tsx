@@ -273,6 +273,7 @@ export default function AnalyticsClient() {
                                 type="date"
                                 value={to}
                                 min={from}
+                                max={todayStr()}
                                 onChange={(e) => {
                                     if (!e.target.value) return;
                                     setTo(e.target.value);
