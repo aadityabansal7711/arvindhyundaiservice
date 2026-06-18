@@ -276,7 +276,13 @@ export async function GET(request: NextRequest) {
   const view = (url.searchParams.get("view") ?? "board").toLowerCase();
   const branchIdParam = (url.searchParams.get("branchId") ?? "").trim();
   const limitRaw = Number(url.searchParams.get("limit") ?? "200");
-  const limit = countsOnly ? 2500 : (Number.isNaN(limitRaw) ? 200 : Math.min(Math.max(limitRaw, 1), 400));
+  const isBoardView = view === "board";
+  // The board renders all open jobs and derives its per-stage counts client-side,
+  // so it must load the complete open set or its counts drift below the sidebar
+  // (which scans the whole table). Allow a high ceiling for the lightweight board
+  // select; keep the heavier table view (select="*") bounded.
+  const maxLimit = isBoardView ? 6000 : 400;
+  const limit = countsOnly ? 2500 : (Number.isNaN(limitRaw) ? 200 : Math.min(Math.max(limitRaw, 1), maxLimit));
   const openOnlyParam = url.searchParams.get("openOnly");
   const openOnly =
     openOnlyParam == null ? true : !(openOnlyParam === "0" || openOnlyParam === "false");
@@ -388,11 +394,11 @@ export async function GET(request: NextRequest) {
 
   const [supabaseJobs, hiddenRowsResult] = await Promise.all([
     listBodyshopJobs({
-      limit: Math.min(limit * 2, countsOnly ? 5000 : 800),
+      limit: Math.min(limit * 2, countsOnly ? 5000 : isBoardView ? 6000 : 800),
       statusSection: countsOnly ? "All" : status,
       search,
       branchIds: effectiveBranchIds,
-      select: view === "board" ? boardSelect : undefined,
+      select: isBoardView ? boardSelect : undefined,
     }),
     // Deleted/tombstoned IDs so refresh doesn't re-add them from Prisma.
     supabaseAdmin.from(HIDDEN_TABLE).select("job_id"),

@@ -22,7 +22,7 @@ import {
 import { isOwnerUser } from "@/lib/owner-access";
 import { getRoPrefixForBranchName, RO_PREFIX_SEPARATOR } from "@/lib/ro-prefix";
 
-type DropdownOption = { id: string; label: string; value: string };
+type DropdownOption = { id: string; label: string; value: string; branchId?: string | null };
 type Branch = { id: string; name: string };
 type StageHistoryRow = {
   id: string;
@@ -84,7 +84,9 @@ function BodyshopDashboardPageInner() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [insuranceOptions, setInsuranceOptions] = useState<DropdownOption[]>([]);
   const [modelOptions, setModelOptions] = useState<DropdownOption[]>([]);
-  const [serviceAdvisorOptions, setServiceAdvisorOptions] = useState<
+  // All service advisors the user can access, prefetched once when the Add modal opens.
+  // The branch-filtered list is derived client-side so it appears instantly on branch change.
+  const [allServiceAdvisors, setAllServiceAdvisors] = useState<
     DropdownOption[]
   >([]);
   const [addPhotoFiles, setAddPhotoFiles] = useState<File[]>([]);
@@ -185,34 +187,34 @@ function BodyshopDashboardPageInner() {
     }
   }, [branchLocked, userBranchId]);
 
-  // Service advisors must be filtered by the branch currently selected in the form.
+  // Prefetch every service advisor the user can access the moment the Add modal opens,
+  // so switching branches filters the list instantly without a network round-trip.
   useEffect(() => {
-    const effectiveBranchId = addForm.branch_id || userBranchId;
-    if (!effectiveBranchId) {
-      setServiceAdvisorOptions([]);
-      return;
-    }
+    if (!isAdding) return;
+    void apiGet<DropdownOption[]>("/api/data/options?group=service_advisor", {
+      cacheMs: 300_000,
+    })
+      .then(setAllServiceAdvisors)
+      .catch(() => setAllServiceAdvisors([]));
+  }, [isAdding]);
 
-    void apiGet<DropdownOption[]>(
-      `/api/data/options?group=service_advisor&branchId=${encodeURIComponent(
-        effectiveBranchId
-      )}`,
-      { cacheMs: 300_000 }
-    )
-      .then((opts) => {
-        setServiceAdvisorOptions(opts);
-        // If the current selection doesn't belong to this branch, clear it.
-        setAddForm((prev) => {
-          if (!prev.service_advisor) return prev;
-          const stillValid = opts.some((o) => o.value === prev.service_advisor);
-          return stillValid ? prev : { ...prev, service_advisor: "" };
-        });
-      })
-      .catch(() => {
-        setServiceAdvisorOptions([]);
-        setAddForm((prev) => ({ ...prev, service_advisor: "" }));
-      });
-  }, [addForm.branch_id, userBranchId]);
+  // Filter the prefetched advisors by the branch currently selected in the form.
+  const serviceAdvisorOptions = useMemo(() => {
+    const effectiveBranchId = addForm.branch_id || userBranchId;
+    if (!effectiveBranchId) return [] as DropdownOption[];
+    return allServiceAdvisors.filter((a) => a.branchId === effectiveBranchId);
+  }, [allServiceAdvisors, addForm.branch_id, userBranchId]);
+
+  // If the chosen advisor no longer belongs to the selected branch, clear it.
+  useEffect(() => {
+    setAddForm((prev) => {
+      if (!prev.service_advisor) return prev;
+      const stillValid = serviceAdvisorOptions.some(
+        (o) => o.value === prev.service_advisor
+      );
+      return stillValid ? prev : { ...prev, service_advisor: "" };
+    });
+  }, [serviceAdvisorOptions]);
 
   // Sync activeStage with URL so sidebar stage selection filters the page
   useEffect(() => {
@@ -235,7 +237,11 @@ function BodyshopDashboardPageInner() {
     try {
       const params = new URLSearchParams({
         search,
-        limit: "250",
+        // Load the full open set so the per-stage counts shown here match the
+        // sidebar's full-table scan. The server returns only rows that exist, so
+        // this high ceiling costs nothing at typical scale but prevents the older
+        // records of a stage from being silently truncated.
+        limit: "6000",
         openOnly: "1",
         view: "board",
       });

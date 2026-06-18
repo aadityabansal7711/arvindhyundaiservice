@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
                         id: a.id,
                         label: a.label,
                         value: a.value ?? a.label,
+                        branchId: a.branchId,
                     }))
                 );
             }
