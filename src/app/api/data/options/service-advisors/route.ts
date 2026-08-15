@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma";
 import { isOwnerUser } from "@/lib/owner-access";
 import { readJsonObject, validateMutationRequest } from "@/lib/server-auth";
 
+const DEPARTMENT_VALUES = new Set(["bodyshop", "workshop", "both"]);
+
 export async function GET() {
     const session = await getServerSession(authOptions);
     const permissions = Array.isArray((session?.user as { permissions?: string[] } | undefined)?.permissions)
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
         const failed: Array<{ row: number; label: string; reason: string }> = [];
 
         for (let i = 0; i < rows.length; i += 1) {
-            const item = rows[i] as { label?: string; branchName?: string };
+            const item = rows[i] as { label?: string; branchName?: string; department?: string };
             const label = String(item?.label ?? "").trim();
             const branchName = String(item?.branchName ?? "").trim();
             if (!label || !branchName) {
@@ -70,6 +72,8 @@ export async function POST(req: NextRequest) {
                 failed.push({ row: i + 1, label, reason: `Branch not found: ${branchName}` });
                 continue;
             }
+            const rawDepartment = String(item?.department ?? "").trim().toLowerCase();
+            const department = DEPARTMENT_VALUES.has(rawDepartment) ? rawDepartment : "both";
             const existing = await prisma.dropdownOption.findFirst({
                 where: { groupKey: "service_advisor", label, branchId },
                 select: { id: true },
@@ -81,6 +85,7 @@ export async function POST(req: NextRequest) {
                     label,
                     value: label,
                     branchId,
+                    department,
                 },
             });
             created += 1;

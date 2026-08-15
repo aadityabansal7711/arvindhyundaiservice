@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test:e2e:api": "playwright test --project=api",
     "test:e2e:ui": "PLAYWRIGHT_UI=1 playwright test --project=chromium --project=mobile-chrome",
-    "postinstall": "npx prisma generate"
+    "postinstall": "npx prisma generate",
+    "gdms:install-browser": "playwright install chromium",
+    "test:unit": "node --import tsx --test tests/unit/gdms-upsert.spec.ts tests/unit/gdms-mapper.spec.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
@@ -23,6 +25,7 @@
     "lucide-react": "^0.575.0",
     "next": "^16.2.6",
     "next-auth": "^4.24.13",
+    "playwright": "^1.60.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "tailwind-merge": "^3.5.0"

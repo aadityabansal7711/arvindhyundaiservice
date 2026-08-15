@@ -45,6 +45,24 @@ alter table public.bodyshop_jobs add column if not exists billing_status text;
 alter table public.bodyshop_jobs add column if not exists parts_status text;
 alter table public.bodyshop_jobs alter column status_section set default 'Document Pending';
 
+-- Splits Bodyshop (insurance/accident, GDMS work type "AR") from Service
+-- (every other GDMS work type) into separate boards. Existing rows all
+-- default to 'bodyshop' via this ADD COLUMN's constant-default backfill —
+-- nothing already on the Bodyshop board disappears.
+alter table public.bodyshop_jobs add column if not exists job_category text not null default 'bodyshop';
+
+create index if not exists idx_bodyshop_jobs_category_status_ro_date
+  on public.bodyshop_jobs (job_category, status_section, ro_date desc);
+
+create index if not exists idx_bodyshop_jobs_category_open_board
+  on public.bodyshop_jobs (job_category, status_section, ro_date desc)
+  where status_section <> 'Delivered';
+
+-- Raw GDMS work-type code (e.g. "AR", "PS") so the board can show a human
+-- "Type" column (see getWorkTypeLabel() in src/lib/gdms/mapper.ts). Null for
+-- manually-added records and rows never re-touched since this column was added.
+alter table public.bodyshop_jobs add column if not exists work_type text;
+
 -- Backfill missing status values to the new initial stage.
 update public.bodyshop_jobs
 set status_section = 'Document Pending'

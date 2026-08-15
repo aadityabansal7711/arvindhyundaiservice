@@ -6,9 +6,10 @@ import { useSession } from "next-auth/react";
 import { format } from "date-fns";
 import { Search, X } from "lucide-react";
 
-import { apiDelete, apiGet } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch } from "@/lib/api";
 import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
 import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
+import { getWorkTypeLabel } from "@/lib/gdms/mapper";
 
 type Branch = { id: string; name: string };
 
@@ -45,6 +46,55 @@ function DeliveredPageInner() {
   const [stageViewLoading, setStageViewLoading] = useState(false);
   const [stageViewError, setStageViewError] = useState<string | null>(null);
   const [stageViewRows, setStageViewRows] = useState<StageHistoryRow[]>([]);
+
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, ms);
+    });
+
+  const fetchPhotosOnlyWithRetry = async (jobId: string) => {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await apiGet<{ ro_no: string; photos: string[] }>(
+          `/api/bodyshop-jobs/${encodeURIComponent(jobId)}?photosOnly=1`
+        );
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Failed to load photos");
+        if (attempt < 3) {
+          await wait(300 * attempt);
+        }
+      }
+    }
+    throw lastError ?? new Error("Failed to load photos");
+  };
+
+  const handleDeletePhotoFromPreview = async (jobId: string, index: number) => {
+    await apiPatch(`/api/bodyshop-jobs/${encodeURIComponent(jobId)}`, {
+      photos_remove_index: index,
+    });
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === jobId
+          ? {
+              ...j,
+              photos: Array.isArray(j.photos)
+                ? j.photos.filter((_, i) => i !== index)
+                : j.photos,
+            }
+          : j
+      )
+    );
+    setPhotoPreview((prev) =>
+      prev && prev.jobId === jobId
+        ? {
+            ...prev,
+            photos: prev.photos.filter((_, i) => i !== index),
+            visibleCount: Math.max(0, prev.visibleCount - 1),
+          }
+        : prev
+    );
+  };
 
   const fetchJobs = useCallback(async (term: string, signal?: AbortSignal) => {
     setIsLoading(true);
@@ -247,6 +297,9 @@ function DeliveredPageInner() {
                       Insurance
                     </th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                      Type
+                    </th>
+                    <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
                       Advisor
                     </th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
@@ -291,15 +344,12 @@ function DeliveredPageInner() {
                               loading: true,
                               error: null,
                               visibleCount: 12,
+                              canAddPhotos: false,
+                              canDeletePhotos: canDeleteRo,
                             });
                             void (async () => {
                               try {
-                                const refreshed = await apiGet<{
-                                  ro_no: string;
-                                  photos: string[];
-                                }>(
-                                  `/api/bodyshop-jobs/${encodeURIComponent(job.id)}?photosOnly=1`
-                                );
+                                const refreshed = await fetchPhotosOnlyWithRetry(job.id);
                                 const photos = Array.isArray(refreshed.photos)
                                   ? refreshed.photos
                                   : [];
@@ -310,6 +360,8 @@ function DeliveredPageInner() {
                                   loading: false,
                                   error: null,
                                   visibleCount: 12,
+                                  canAddPhotos: false,
+                                  canDeletePhotos: canDeleteRo,
                                 });
                               } catch {
                                 setPhotoPreview({
@@ -319,6 +371,8 @@ function DeliveredPageInner() {
                                   loading: false,
                                   error: "Failed to load latest photos. Showing cached photos.",
                                   visibleCount: 12,
+                                  canAddPhotos: false,
+                                  canDeletePhotos: canDeleteRo,
                                 });
                               }
                             })();
@@ -339,6 +393,9 @@ function DeliveredPageInner() {
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
                         {job.insurance_company ?? "—"}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate-700">
+                        {getWorkTypeLabel(job.work_type) ?? "—"}
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
                         {job.service_advisor ?? "—"}
@@ -398,6 +455,8 @@ function DeliveredPageInner() {
                 : prev
             )
           }
+          onAddPhotos={async () => ({ skipped: 0 })}
+          onDeletePhoto={(index) => handleDeletePhotoFromPreview(photoPreview.jobId, index)}
         />
       )}
 

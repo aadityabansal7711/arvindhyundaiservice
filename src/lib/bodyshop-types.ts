@@ -18,6 +18,19 @@ export type StatusSection =
   | "Total Loss / Disputed"
   | "Delivered";
 
+/** Plain (non-insurance) service visits, tracked with a simpler linear workflow. */
+export type ServiceStatusSection = "Job Open" | "Delivered";
+
+/** Whether a job is an insurance/accident claim (Bodyshop) or a plain visit (Service). */
+export type JobCategory = "bodyshop" | "service";
+
+/** `bodyshop_jobs.status_section` stores either category's stage strings. */
+export type AnyStatusSection = StatusSection | ServiceStatusSection;
+
+/**
+ * A row in `bodyshop_jobs`. Despite the name, this table (and this type) now
+ * represents either category of job — `job_category` says which.
+ */
 export interface BodyshopJob {
   id: string;
   ro_no: string;
@@ -49,9 +62,12 @@ export interface BodyshopJob {
   order_date: string | null;
   eta_date: string | null;
   received_date: string | null;
-  status_section: StatusSection;
+  status_section: AnyStatusSection;
   billing_status: string | null;
   parts_status: string | null;
+  job_category: JobCategory;
+  /** Raw GDMS work-type code (e.g. "AR", "PS") — null for manually-added records or rows never re-touched since this column was added. Use `getWorkTypeLabel()` to display it. */
+  work_type: string | null;
   created_at: string;
   updated_at: string;
 }

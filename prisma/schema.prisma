@@ -38,6 +38,7 @@ model Branch {
   users         User[]
   userBranches  UserBranch[]
   dropdownOptions DropdownOption[]
+  gdmsCredential  GdmsCredential?
 }
 
 model User {
@@ -55,6 +56,7 @@ model User {
   active           Boolean   @default(true)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  gdmsCredentialUpdates GdmsCredential[]
 
   @@index([active])
 }
@@ -70,15 +72,31 @@ model UserBranch {
 }
 
 model DropdownOption {
-  id        String   @id @default(cuid())
-  groupKey  String   // e.g. "insurance_company", "ro_status"
-  label     String   // display text in dropdown
-  value     String?  // stored value (if empty, use label)
-  branchId  String?
-  branch    Branch?  @relation(fields: [branchId], references: [id])
-  sortOrder Int      @default(0)
+  id         String   @id @default(cuid())
+  groupKey   String   // e.g. "insurance_company", "ro_status"
+  label      String   // display text in dropdown
+  value      String?  // stored value (if empty, use label)
+  branchId   String?
+  branch     Branch?  @relation(fields: [branchId], references: [id])
+  sortOrder  Int      @default(0)
+  department String?  // service_advisor only: "bodyshop" | "workshop" | "both"
 
   @@index([groupKey])
   @@index([branchId])
   @@index([groupKey, branchId])
+}
+
+// Per-branch GDMS (Hyundai NDMS dealer portal) login used by the
+// "Fetch from GDMS" automation. One row per branch. `encryptedPassword`
+// is AES-256-GCM ciphertext (see src/lib/gdms/crypto.ts) — the plaintext
+// password never touches the database.
+model GdmsCredential {
+  id                String   @id @default(cuid())
+  branchId          String   @unique
+  branch            Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  gdmsUserId        String
+  encryptedPassword String
+  updatedAt         DateTime @updatedAt
+  updatedByUserId   String?
+  updatedByUser     User?    @relation(fields: [updatedByUserId], references: [id], onDelete: SetNull)
 }

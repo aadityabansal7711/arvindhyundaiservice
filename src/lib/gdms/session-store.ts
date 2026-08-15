@@ -1,0 +1,123 @@
+import crypto from "node:crypto";
+import type { Browser, BrowserContext, Page } from "playwright";
+import {
+  GDMS_BASE_URL,
+  GDMS_LOGOUT_PATH,
+  GDMS_LOGOUT_TIMEOUT_MS,
+  GDMS_MAX_CONCURRENT_SESSIONS,
+  GDMS_SESSION_TTL_MS,
+} from "./config";
+
+export type GdmsSessionStage = "awaiting_otp" | "authenticated";
+
+export type GdmsPendingSession = {
+  id: string;
+  branchId: string;
+  userId: string;
+  browser: Browser;
+  context: BrowserContext;
+  page: Page;
+  stage: GdmsSessionStage;
+  createdAt: number;
+  expiresAt: number;
+  timeoutHandle: ReturnType<typeof setTimeout>;
+};
+
+/**
+ * In-memory store of open GDMS browser sessions, keyed by sessionId.
+ * Safe only because this app runs as a single always-on `next start` process —
+ * every API route resolves the same module instance, same as rate-limit.ts's
+ * `buckets` Map and branch-list.ts's `cache` variable.
+ */
+const sessions = new Map<string, GdmsPendingSession>();
+
+/**
+ * Best-effort logout via GDMS's own logout endpoint (same URL its "Logout"
+ * nav button navigates to) so we don't leave an authenticated session
+ * dangling on their server until it times out on its own. Never throws —
+ * this is cleanup, it must not block the browser from closing.
+ */
+async function bestEffortLogout(page: Page, stage: GdmsSessionStage) {
+  if (stage !== "authenticated") return;
+  try {
+    await page.goto(`${GDMS_BASE_URL}${GDMS_LOGOUT_PATH}`, {
+      timeout: GDMS_LOGOUT_TIMEOUT_MS,
+      waitUntil: "domcontentloaded",
+    });
+  } catch {
+    // Best-effort only — GDMS being slow/unreachable at cleanup time must not block teardown.
+  }
+}
+
+async function safeCloseBrowser(browser: Browser) {
+  try {
+    await browser.close();
+  } catch {
+    // Already closed / crashed — nothing more we can do.
+  }
+}
+
+export function countActiveSessions(): number {
+  return sessions.size;
+}
+
+export async function createSession(params: {
+  branchId: string;
+  userId: string;
+  browser: Browser;
+  context: BrowserContext;
+  page: Page;
+}): Promise<string> {
+  if (sessions.size >= GDMS_MAX_CONCURRENT_SESSIONS) {
+    await safeCloseBrowser(params.browser);
+    throw new Error(
+      "Too many GDMS fetch sessions are already in progress. Please wait for one to finish and try again."
+    );
+  }
+
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const timeoutHandle = setTimeout(() => {
+    void destroySession(id);
+  }, GDMS_SESSION_TTL_MS);
+
+  sessions.set(id, {
+    id,
+    branchId: params.branchId,
+    userId: params.userId,
+    browser: params.browser,
+    context: params.context,
+    page: params.page,
+    stage: "awaiting_otp",
+    createdAt: now,
+    expiresAt: now + GDMS_SESSION_TTL_MS,
+    timeoutHandle,
+  });
+
+  return id;
+}
+
+/** Returns the session, evicting (and closing) it first if its TTL has passed. */
+export function getSession(sessionId: string): GdmsPendingSession | null {
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    void destroySession(sessionId);
+    return null;
+  }
+  return session;
+}
+
+export function markAuthenticated(sessionId: string): void {
+  const session = sessions.get(sessionId);
+  if (session) session.stage = "authenticated";
+}
+
+export async function destroySession(sessionId: string): Promise<void> {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  clearTimeout(session.timeoutHandle);
+  sessions.delete(sessionId);
+  await bestEffortLogout(session.page, session.stage);
+  await safeCloseBrowser(session.browser);
+}

@@ -10,17 +10,21 @@ import {
   Camera,
   X,
   Image as ImageIcon,
+  Download,
 } from "lucide-react";
 
 import { apiGet, apiPost, apiDelete, apiPatch } from "@/lib/api";
 import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
+import { GdmsFetchModal } from "@/components/bodyshop/gdms-fetch-modal";
 import type { BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import {
   compressImageToMax100KB,
+  compressImagesToMax100KB,
 } from "@/lib/compress-image";
 import { isOwnerUser } from "@/lib/owner-access";
 import { getRoPrefixForBranchName, RO_PREFIX_SEPARATOR } from "@/lib/ro-prefix";
+import { getWorkTypeLabel } from "@/lib/gdms/mapper";
 
 type DropdownOption = { id: string; label: string; value: string; branchId?: string | null };
 type Branch = { id: string; name: string };
@@ -96,6 +100,9 @@ function BodyshopDashboardPageInner() {
   const [photoPreview, setPhotoPreview] = useState<PhotoPreviewState | null>(null);
 
   const userPermissions = ((session?.user as any)?.permissions ?? []) as string[];
+  const canFetchGdms =
+    userPermissions.includes("gdms.fetch") || userPermissions.includes("users.manage");
+  const [isGdmsModalOpen, setIsGdmsModalOpen] = useState(false);
   const userBranchId = (session?.user as any)?.branchId as string | undefined;
   const canViewAllBranches =
     userPermissions.includes("branches.view_all") ||
@@ -146,6 +153,96 @@ function BodyshopDashboardPageInner() {
       }
     }
     throw lastError ?? new Error("Failed to append photo");
+  };
+
+  const fetchPhotosOnlyWithRetry = async (jobId: string) => {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        return await apiGet<{ ro_no: string; photos: string[] }>(
+          `/api/bodyshop-jobs/${encodeURIComponent(jobId)}?photosOnly=1`
+        );
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error("Failed to load photos");
+        if (attempt < 3) {
+          await wait(300 * attempt);
+        }
+      }
+    }
+    throw lastError ?? new Error("Failed to load photos");
+  };
+
+  const handleAddPhotosFromPreview = async (jobId: string, files: File[]) => {
+    const encodedAll = await compressImagesToMax100KB(files);
+    const existingPhotos = new Set(
+      photoPreview && photoPreview.jobId === jobId ? photoPreview.photos : []
+    );
+    const seenThisBatch = new Set<string>();
+    const encodedPhotos: string[] = [];
+    let skipped = 0;
+    for (const encoded of encodedAll) {
+      if (existingPhotos.has(encoded) || seenThisBatch.has(encoded)) {
+        skipped += 1;
+        continue;
+      }
+      seenThisBatch.add(encoded);
+      encodedPhotos.push(encoded);
+    }
+
+    for (const encoded of encodedPhotos) {
+      await appendPhotoWithRetry(jobId, encoded);
+    }
+    if (encodedPhotos.length > 0) {
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === jobId
+            ? {
+                ...j,
+                photos: [...(Array.isArray(j.photos) ? j.photos : []), ...encodedPhotos],
+              }
+            : j
+        )
+      );
+      setPhotoPreview((prev) =>
+        prev && prev.jobId === jobId
+          ? {
+              ...prev,
+              photos: [...prev.photos, ...encodedPhotos],
+              visibleCount: prev.photos.length + encodedPhotos.length,
+            }
+          : prev
+      );
+      emitCountsRefresh();
+    }
+    return { skipped };
+  };
+
+  const handleDeletePhotoFromPreview = async (jobId: string, index: number) => {
+    await apiPatch(`/api/bodyshop-jobs/${encodeURIComponent(jobId)}`, {
+      photos_remove_index: index,
+    });
+    setJobs((prev) =>
+      prev.map((j) =>
+        j.id === jobId
+          ? {
+              ...j,
+              photos: Array.isArray(j.photos)
+                ? j.photos.filter((_, i) => i !== index)
+                : j.photos,
+            }
+          : j
+      )
+    );
+    setPhotoPreview((prev) =>
+      prev && prev.jobId === jobId
+        ? {
+            ...prev,
+            photos: prev.photos.filter((_, i) => i !== index),
+            visibleCount: Math.max(0, prev.visibleCount - 1),
+          }
+        : prev
+    );
+    emitCountsRefresh();
   };
 
   const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -280,7 +377,9 @@ function BodyshopDashboardPageInner() {
       },
       {} as Record<StatusSection, number>
     );
-    for (const j of jobs) stageCounts[j.status_section] += 1;
+    // This page only ever holds bodyshop-category jobs (fetched without a
+    // category param, which defaults server-side to "bodyshop").
+    for (const j of jobs) stageCounts[j.status_section as StatusSection] += 1;
 
     const filtered =
       activeStage === "All"
@@ -488,7 +587,7 @@ function BodyshopDashboardPageInner() {
   };
 
   const onMoveToNextStatus = async (job: BodyshopJobWithMeta) => {
-    const moveTargets = getMoveTargets(job.status_section);
+    const moveTargets = getMoveTargets(job.status_section as StatusSection);
     if (!moveTargets || moveTargets.length === 0) return;
 
     const now = new Date();
@@ -645,6 +744,16 @@ function BodyshopDashboardPageInner() {
                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
                   />
                 </div>
+                {canFetchGdms && (
+                  <button
+                    type="button"
+                    onClick={() => setIsGdmsModalOpen(true)}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-bold shadow-sm hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Fetch from GDMS
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -708,6 +817,9 @@ function BodyshopDashboardPageInner() {
                           Insurance
                         </th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
+                          Type
+                        </th>
+                        <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
                           Advisor
                         </th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
@@ -749,6 +861,9 @@ function BodyshopDashboardPageInner() {
                             {job.insurance_company ?? "—"}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
+                            {getWorkTypeLabel(job.work_type) ?? "—"}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-slate-700">
                             {job.service_advisor ?? "—"}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
@@ -756,6 +871,8 @@ function BodyshopDashboardPageInner() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                const canAddPhotos = job.status_section === "Document Pending";
+                                const canDeletePhotos = canDeleteRo;
                                 setPhotoPreview({
                                   jobId: job.id,
                                   title: `RO ${job.ro_no} photos`,
@@ -763,15 +880,12 @@ function BodyshopDashboardPageInner() {
                                   loading: true,
                                   error: null,
                                   visibleCount: 12,
+                                  canAddPhotos,
+                                  canDeletePhotos,
                                 });
                                 void (async () => {
                                   try {
-                                    const refreshed = await apiGet<{
-                                      ro_no: string;
-                                      photos: string[];
-                                    }>(
-                                      `/api/bodyshop-jobs/${encodeURIComponent(job.id)}?photosOnly=1`
-                                    );
+                                    const refreshed = await fetchPhotosOnlyWithRetry(job.id);
                                     const photos = Array.isArray(refreshed.photos)
                                       ? refreshed.photos
                                       : [];
@@ -782,6 +896,8 @@ function BodyshopDashboardPageInner() {
                                       loading: false,
                                       error: null,
                                       visibleCount: 12,
+                                      canAddPhotos,
+                                      canDeletePhotos,
                                     });
                                   } catch {
                                     // Fallback to whatever board state we currently have.
@@ -792,6 +908,8 @@ function BodyshopDashboardPageInner() {
                                       loading: false,
                                       error: "Failed to load latest photos. Showing cached photos.",
                                       visibleCount: 12,
+                                      canAddPhotos,
+                                      canDeletePhotos,
                                     });
                                   }
                                 })();
@@ -804,7 +922,7 @@ function BodyshopDashboardPageInner() {
                           </td>
                           <td className="px-5 py-3 text-sm">
                             <div className="flex items-center gap-2">
-                              <span className={`inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold ring-1 ${statusPillClass(job.status_section)}`}>
+                              <span className={`inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold ring-1 ${statusPillClass(job.status_section as StatusSection)}`}>
                                 {job.status_section}
                               </span>
                               <button
@@ -848,7 +966,7 @@ function BodyshopDashboardPageInner() {
                                 </button>
                               )}
                               {(() => {
-                                const targets = getMoveTargets(job.status_section);
+                                const targets = getMoveTargets(job.status_section as StatusSection);
                                 if (!targets || targets.length === 0) return null;
                                 const label =
                                   targets.length === 1 ? targets[0] : "Choose Next";
@@ -878,6 +996,18 @@ function BodyshopDashboardPageInner() {
         </div>
       </div>
 
+      {/* Fetch from GDMS modal */}
+      {isGdmsModalOpen && (
+        <GdmsFetchModal
+          branches={branches}
+          onClose={() => setIsGdmsModalOpen(false)}
+          onImported={() => {
+            emitCountsRefresh();
+            void fetchJobs();
+          }}
+        />
+      )}
+
       {/* Photo preview modal */}
       {photoPreview && (
         <PhotoPreviewModal
@@ -893,6 +1023,8 @@ function BodyshopDashboardPageInner() {
                 : prev
             )
           }
+          onAddPhotos={(files) => handleAddPhotosFromPreview(photoPreview.jobId, files)}
+          onDeletePhoto={(index) => handleDeletePhotoFromPreview(photoPreview.jobId, index)}
         />
       )}
 

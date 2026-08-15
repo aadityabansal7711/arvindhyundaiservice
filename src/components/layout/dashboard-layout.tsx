@@ -17,10 +17,13 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     BarChart3,
+    KeyRound,
+    Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isOwnerUser } from "@/lib/owner-access";
 import { SidebarStages } from "@/components/bodyshop/sidebar-stages";
+import { ServiceSidebarStages } from "@/components/service/sidebar-stages";
 
 type SidebarItem = {
     name: string;
@@ -32,9 +35,12 @@ type SidebarItem = {
 
 const sidebarItems: SidebarItem[] = [
     { name: "Bodyshop Board", href: "/bodyshop", icon: KanbanSquare, permission: "ro.view" },
-    { name: "Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
+    { name: "Bodyshop Delivered", href: "/bodyshop/delivered", icon: PackageCheck, permission: "users.manage" },
+    { name: "Service Board", href: "/service", icon: Wrench, permission: "ro.view" },
+    { name: "Service Delivered", href: "/service/delivered", icon: PackageCheck, permission: "users.manage" },
     { name: "Analytics", href: "/analytics", icon: BarChart3, ownerOnly: true },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
+    { name: "GDMS Credentials", href: "/admin/gdms-credentials", icon: KeyRound, ownerOnly: true },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
 
@@ -57,6 +63,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
     const managerAllowedRoots = new Set([
         "/bodyshop",
+        "/service",
         "/data",
     ]);
 
@@ -76,32 +83,52 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         return true;
     });
 
-    // Render Bodyshop "board" link(s) above stages, but keep "Delivered" below stages.
+    // Render Bodyshop/Service "board" link(s) above their stages, but keep "Delivered" below stages.
     const deliveredItem = filteredSidebarItems.find((i) => i.href === "/bodyshop/delivered");
     const bodyshopItem = filteredSidebarItems.filter(
         (i) => i.href.startsWith("/bodyshop") && i.href !== "/bodyshop/delivered"
     );
-    const nonBodyshopItems = filteredSidebarItems.filter((i) => !i.href.startsWith("/bodyshop"));
+    const serviceDeliveredItem = filteredSidebarItems.find((i) => i.href === "/service/delivered");
+    const serviceItem = filteredSidebarItems.filter(
+        (i) => i.href.startsWith("/service") && i.href !== "/service/delivered"
+    );
+    const nonBodyshopItems = filteredSidebarItems.filter(
+        (i) => !i.href.startsWith("/bodyshop") && !i.href.startsWith("/service")
+    );
     const showBodyshopStages =
         pathname.startsWith("/bodyshop") &&
         !pathname.startsWith("/bodyshop/delivered") &&
+        !isSidebarCollapsed;
+    const showServiceStages =
+        pathname.startsWith("/service") &&
+        !pathname.startsWith("/service/delivered") &&
         !isSidebarCollapsed;
     const pageTitle =
         pathname.startsWith("/bodyshop/delivered")
             ? "Delivered Vehicles"
             : pathname.startsWith("/bodyshop")
                 ? "Bodyshop Operations"
-                : pathname.startsWith("/admin/users")
-                    ? "User Management"
-                    : pathname.startsWith("/data")
-                        ? "Data Library"
-                        : pathname.startsWith("/analytics")
-                            ? "Analytics"
-                            : "Service Operations";
+                : pathname.startsWith("/service/delivered")
+                    ? "Service Delivered Vehicles"
+                    : pathname.startsWith("/service")
+                        ? "Service Operations"
+                        : pathname.startsWith("/admin/users")
+                            ? "User Management"
+                            : pathname.startsWith("/admin/gdms-credentials")
+                                ? "GDMS Credentials"
+                            : pathname.startsWith("/data")
+                                ? "Data Library"
+                                : pathname.startsWith("/analytics")
+                                    ? "Analytics"
+                                    : "Service Operations";
     const isSidebarItemActive = (href: string) => {
         if (href === "/bodyshop") {
             // `/bodyshop/delivered` should not mark "Bodyshop Board" as active.
             return pathname === "/bodyshop" || (pathname.startsWith("/bodyshop") && !pathname.startsWith("/bodyshop/delivered"));
+        }
+        if (href === "/service") {
+            // `/service/delivered` should not mark "Service Board" as active.
+            return pathname === "/service" || (pathname.startsWith("/service") && !pathname.startsWith("/service/delivered"));
         }
         return pathname.startsWith(href);
     };
@@ -211,6 +238,64 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                                 <span className="truncate">{deliveredItem.name}</span>
                             )}
                             {pathname.startsWith(deliveredItem.href) && !isSidebarCollapsed && (
+                                <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
+                            )}
+                        </Link>
+                    )}
+                    {serviceItem.map((item) => (
+                        <Link
+                            key={item.name}
+                            href={item.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                                "flex items-center gap-3 px-3 py-2 min-h-10 rounded-xl transition-all duration-200 group touch-manipulation",
+                                isSidebarItemActive(item.href)
+                                    ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
+                                    : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
+                            )}
+                        >
+                            <item.icon className={cn(
+                                "w-5 h-5 shrink-0",
+                                isSidebarItemActive(item.href) ? "text-sky-300" : "text-slate-500 group-hover:text-slate-300"
+                            )} />
+                            {!isSidebarCollapsed && <span className="truncate">{item.name}</span>}
+                            {isSidebarItemActive(item.href) && !isSidebarCollapsed && (
+                                <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
+                            )}
+                        </Link>
+                    ))}
+                    {showServiceStages && (
+                        <div className="mt-2 h-[calc(100vh-26rem)] min-h-32 overflow-hidden">
+                            <Suspense fallback={<div className="bg-white/10 rounded-xl h-32 animate-pulse" />}>
+                                <ServiceSidebarStages />
+                            </Suspense>
+                        </div>
+                    )}
+                    {serviceDeliveredItem && (
+                        <Link
+                            key={serviceDeliveredItem.name}
+                            href={serviceDeliveredItem.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={cn(
+                                "flex items-center gap-3 px-3 py-2 min-h-10 rounded-xl transition-all duration-200 group touch-manipulation text-sm",
+                                showServiceStages && "mt-1",
+                                pathname.startsWith(serviceDeliveredItem.href)
+                                    ? "bg-white/[0.12] text-white font-medium shadow-inner ring-1 ring-white/10"
+                                    : "text-slate-400 hover:bg-white/[0.07] hover:text-slate-100"
+                            )}
+                        >
+                            <serviceDeliveredItem.icon
+                                className={cn(
+                                    "w-5 h-5 shrink-0",
+                                    pathname.startsWith(serviceDeliveredItem.href)
+                                        ? "text-sky-300"
+                                        : "text-slate-500 group-hover:text-slate-300"
+                                )}
+                            />
+                            {!isSidebarCollapsed && (
+                                <span className="truncate">{serviceDeliveredItem.name}</span>
+                            )}
+                            {pathname.startsWith(serviceDeliveredItem.href) && !isSidebarCollapsed && (
                                 <div className="ml-auto w-1.5 h-1.5 bg-sky-300 rounded-full shrink-0" />
                             )}
                         </Link>

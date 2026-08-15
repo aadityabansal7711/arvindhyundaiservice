@@ -51,7 +51,9 @@ export default function BodyshopJobDetailPage() {
         if (controller.signal.aborted) return;
         setJob(jobData);
         setStages(stagesData);
-        setActiveStatus(jobData.status_section);
+        // This page only ever loads bodyshop-category jobs (fetched without
+        // a category param, which defaults server-side to "bodyshop").
+        setActiveStatus(jobData.status_section as StatusSection);
         setForm(jobData as any);
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") return;
@@ -165,7 +167,7 @@ export default function BodyshopJobDetailPage() {
       const refreshed = await apiGet<BodyshopJobWithMeta>(`/api/bodyshop-jobs/${encodedId}`);
       setJob(refreshed);
       setForm(refreshed as any);
-      setActiveStatus(refreshed.status_section);
+      setActiveStatus(refreshed.status_section as StatusSection);
       const stagesData = await apiGet<StageHistory[]>(`/api/bodyshop-stages?jobId=${encodedId}`);
       setStages(stagesData);
     } catch (e) {

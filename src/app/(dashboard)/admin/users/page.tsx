@@ -20,13 +20,15 @@ type UserRow = {
 
 type Role = { id: string; name: string };
 type Branch = { id: string; name: string };
-type BulkAdvisorRow = { label: string; branchName: string };
+type AdvisorDepartment = "bodyshop" | "workshop" | "both";
+type BulkAdvisorRow = { label: string; branchName: string; department: AdvisorDepartment };
 type AdvisorOption = {
     id: string;
     label: string;
     value?: string | null;
     branchId?: string | null;
     branch?: { id: string; name: string } | null;
+    department?: AdvisorDepartment | null;
 };
 
 export default function UserManagementPage() {
@@ -66,7 +68,11 @@ export default function UserManagementPage() {
     const [bulkError, setBulkError] = useState("");
     const [showAdvisorModal, setShowAdvisorModal] = useState(false);
     const [editingAdvisor, setEditingAdvisor] = useState<AdvisorOption | null>(null);
-    const [advisorForm, setAdvisorForm] = useState({ label: "", branchId: "" });
+    const [advisorForm, setAdvisorForm] = useState<{ label: string; branchId: string; department: AdvisorDepartment }>({
+        label: "",
+        branchId: "",
+        department: "both",
+    });
     const [advisorSaving, setAdvisorSaving] = useState(false);
     const [advisorError, setAdvisorError] = useState("");
     const canEditUsers = isOwnerUser(session?.user);
@@ -190,14 +196,18 @@ export default function UserManagementPage() {
 
     const openAddAdvisor = () => {
         setEditingAdvisor(null);
-        setAdvisorForm({ label: "", branchId: metadata?.branches?.[0]?.id ?? "" });
+        setAdvisorForm({ label: "", branchId: metadata?.branches?.[0]?.id ?? "", department: "both" });
         setAdvisorError("");
         setShowAdvisorModal(true);
     };
 
     const openEditAdvisor = (advisor: AdvisorOption) => {
         setEditingAdvisor(advisor);
-        setAdvisorForm({ label: advisor.label ?? "", branchId: advisor.branchId ?? "" });
+        setAdvisorForm({
+            label: advisor.label ?? "",
+            branchId: advisor.branchId ?? "",
+            department: advisor.department ?? "both",
+        });
         setAdvisorError("");
         setShowAdvisorModal(true);
     };
@@ -216,6 +226,7 @@ export default function UserManagementPage() {
                     label: advisorForm.label.trim(),
                     value: advisorForm.label.trim(),
                     branchId: advisorForm.branchId.trim(),
+                    department: advisorForm.department,
                 });
             } else {
                 await apiPost("/api/data/options", {
@@ -223,6 +234,7 @@ export default function UserManagementPage() {
                     label: advisorForm.label.trim(),
                     value: advisorForm.label.trim(),
                     branchId: advisorForm.branchId.trim(),
+                    department: advisorForm.department,
                 });
             }
             setShowAdvisorModal(false);
@@ -257,13 +269,18 @@ export default function UserManagementPage() {
             rows.shift();
         }
 
+        const validDepartments = new Set<AdvisorDepartment>(["bodyshop", "workshop", "both"]);
         return rows
             .map((line) => line.split(",").map((x) => x.trim()))
             .filter((parts) => parts.length >= 2)
-            .map((parts) => ({
-                label: parts[0] ?? "",
-                branchName: (parts[1] ?? "").trim(),
-            }))
+            .map((parts) => {
+                const rawDepartment = (parts[2] ?? "").toLowerCase() as AdvisorDepartment;
+                return {
+                    label: parts[0] ?? "",
+                    branchName: (parts[1] ?? "").trim(),
+                    department: validDepartments.has(rawDepartment) ? rawDepartment : "both",
+                };
+            })
             .filter((row) => row.label && row.branchName);
     };
 
@@ -271,7 +288,7 @@ export default function UserManagementPage() {
         e.preventDefault();
         const rows = parseBulkAdvisorRows(bulkAdvisorText);
         if (rows.length === 0) {
-            setBulkError("No valid rows found. Use: advisor_name,branch");
+            setBulkError("No valid rows found. Use: advisor_name,branch,department");
             return;
         }
         setBulkSaving(true);
@@ -472,18 +489,37 @@ export default function UserManagementPage() {
                                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-widest">
                                     <th className="px-6 py-4">Service Advisor</th>
                                     <th className="px-6 py-4">Branch</th>
+                                    <th className="px-6 py-4">Department</th>
                                     <th className="px-6 py-4 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {isLoading ? (
-                                    <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400">Loading advisors...</td></tr>
+                                    <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Loading advisors...</td></tr>
                                 ) : filteredAdvisors.map((a) => (
                                     <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
                                         <td className="px-6 py-4">
                                             <span className="text-sm font-bold text-slate-900">{a.label}</span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-700">{a.branch?.name ?? "-"}</td>
+                                        <td className="px-6 py-4">
+                                            <span
+                                                className={cn(
+                                                    "inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold ring-1",
+                                                    a.department === "bodyshop"
+                                                        ? "bg-amber-50 text-amber-800 ring-amber-200"
+                                                        : a.department === "workshop"
+                                                          ? "bg-sky-50 text-sky-800 ring-sky-200"
+                                                          : "bg-slate-100 text-slate-700 ring-slate-200"
+                                                )}
+                                            >
+                                                {a.department === "bodyshop"
+                                                    ? "Bodyshop"
+                                                    : a.department === "workshop"
+                                                      ? "Workshop"
+                                                      : "Both"}
+                                            </span>
+                                        </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
                                                 {canEditUsers && (
@@ -670,6 +706,21 @@ export default function UserManagementPage() {
                                     ))}
                                 </select>
                             </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Department</label>
+                                <select
+                                    value={advisorForm.department}
+                                    onChange={(e) =>
+                                        setAdvisorForm((f) => ({ ...f, department: e.target.value as AdvisorDepartment }))
+                                    }
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    required
+                                >
+                                    <option value="bodyshop">Bodyshop</option>
+                                    <option value="workshop">Workshop</option>
+                                    <option value="both">Both</option>
+                                </select>
+                            </div>
                             <div className="flex gap-2 pt-2">
                                 <button
                                     type="button"
@@ -717,8 +768,9 @@ export default function UserManagementPage() {
                                 <p className="text-sm text-rose-600 bg-rose-50 px-3 py-2 rounded-lg">{bulkError}</p>
                             )}
                             <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5 text-xs text-slate-600">
-                                Format: <strong>advisor_name,branch</strong><br />
-                                Example: <strong>Rahul,Bypass</strong>
+                                Format: <strong>advisor_name,branch,department</strong><br />
+                                Department is one of <strong>bodyshop</strong>, <strong>workshop</strong>, or <strong>both</strong> (defaults to <strong>both</strong> if left blank).<br />
+                                Example: <strong>Rahul,Bypass,bodyshop</strong>
                             </div>
                             <div className="flex items-center gap-3">
                                 <label className="text-sm font-medium text-slate-700">Upload CSV</label>
@@ -740,7 +792,7 @@ export default function UserManagementPage() {
                                     value={bulkAdvisorText}
                                     onChange={(e) => setBulkAdvisorText(e.target.value)}
                                     className="w-full h-48 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    placeholder={"name,branch\nRahul,Bypass"}
+                                    placeholder={"name,branch,department\nRahul,Bypass,bodyshop"}
                                 />
                             </div>
                             {bulkResult && (

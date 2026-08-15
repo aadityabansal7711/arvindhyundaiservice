@@ -20,7 +20,8 @@ async function main() {
         'import.manage',
         'dashboard.view',
         'branches.view_all',
-        'branches.view_multi'
+        'branches.view_multi',
+        'gdms.fetch'
     ];
 
     const permissions = [];
@@ -36,6 +37,8 @@ async function main() {
     // 2. Create Roles
     const rolesData = [
         { name: 'Owner/Admin', permissions: permissionKeys },
+        // 'gdms.fetch' is intentionally left off every other seeded role — the
+        // owner can grant it to specific roles later via the Roles admin screen.
         { name: 'Service Manager', permissions: ['ro.view', 'ro.edit', 'billing.view', 'parts.view', 'ndc.view', 'dashboard.view', 'branches.view_multi'] },
         { name: 'Bodyshop Advisor', permissions: ['ro.view', 'ro.create', 'ro.edit', 'parts.view', 'ndc.view', 'dashboard.view'] },
         { name: 'Parts Manager/Store', permissions: ['parts.view', 'parts.edit', 'ro.view'] },

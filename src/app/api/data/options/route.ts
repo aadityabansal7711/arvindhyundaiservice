@@ -6,6 +6,8 @@ import { getBypassBranchId, getCachedUserBranchAssignments, isBypassOnlyUser } f
 import { isOwnerUser } from "@/lib/owner-access";
 import { readJsonObject, validateMutationRequest } from "@/lib/server-auth";
 
+const DEPARTMENT_VALUES = new Set(["bodyshop", "workshop", "both"]);
+
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) {
@@ -94,6 +96,7 @@ export async function GET(req: NextRequest) {
                         label: a.label,
                         value: a.value ?? a.label,
                         branchId: a.branchId,
+                        department: a.department,
                     }))
                 );
             }
@@ -134,23 +137,31 @@ export async function POST(req: NextRequest) {
     try {
         const body = await readJsonObject(req);
         if (body instanceof NextResponse) return body;
-        const { groupKey, label, value, sortOrder, branchId } = body;
+        const { groupKey, label, value, sortOrder, branchId, department } = body;
         if (!groupKey || !label) {
             return NextResponse.json(
                 { error: "groupKey and label are required" },
                 { status: 400 }
             );
         }
-        if (String(groupKey).trim() === "service_advisor" && !String(branchId ?? "").trim()) {
+        const trimmedGroupKey = String(groupKey).trim();
+        if (trimmedGroupKey === "service_advisor" && !String(branchId ?? "").trim()) {
             return NextResponse.json({ error: "branchId is required for service advisors" }, { status: 400 });
+        }
+        if (department != null && !DEPARTMENT_VALUES.has(String(department))) {
+            return NextResponse.json({ error: "department must be bodyshop, workshop, or both" }, { status: 400 });
         }
         const option = await prisma.dropdownOption.create({
             data: {
-                groupKey: String(groupKey).trim(),
+                groupKey: trimmedGroupKey,
                 label: String(label).trim(),
                 value: value != null && value !== "" ? String(value).trim() : null,
                 branchId: branchId != null && String(branchId).trim() ? String(branchId).trim() : null,
                 sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+                department:
+                    trimmedGroupKey === "service_advisor" && department != null && department !== ""
+                        ? String(department)
+                        : null,
             },
         });
         return NextResponse.json(option);

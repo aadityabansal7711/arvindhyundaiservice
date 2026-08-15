@@ -1,25 +1,37 @@
 import supabaseAdmin from "./supabase-admin";
 import { differenceInDays } from "date-fns";
-import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "./bodyshop-types";
+import { AnyStatusSection, BodyshopJob, BodyshopJobWithMeta, JobCategory } from "./bodyshop-types";
 import { BODYSHOP_JOBS_SEED, STATUS_SECTION_ORDER } from "./bodyshop-seed";
+import { SERVICE_STATUS_SECTION_ORDER } from "./service-seed";
 
 const TABLE_NAME = "bodyshop_jobs";
 
 type ListParams = {
   search?: string;
-  statusSection?: StatusSection | "All";
+  statusSection?: AnyStatusSection | "All";
   branchIds?: string[];
   limit?: number;
   select?: string;
+  jobCategory?: JobCategory;
 };
 
 let seedCheckPromise: Promise<void> | null = null;
 
-function normalizeStatusSection(raw: unknown): StatusSection {
+function resolveJobCategory(raw: unknown): JobCategory {
+  return raw === "service" ? "service" : "bodyshop";
+}
+
+/** Uses the row's own category — a stray mismatch with the query filter must not get silently coerced wrong. */
+function normalizeStatusSection(raw: unknown, category: JobCategory): AnyStatusSection {
   const s = typeof raw === "string" ? raw : "";
+  if (category === "service") {
+    return (SERVICE_STATUS_SECTION_ORDER as readonly string[]).includes(s)
+      ? (s as AnyStatusSection)
+      : SERVICE_STATUS_SECTION_ORDER[0];
+  }
   if (s === "Approval Hold") return "Approval Pending";
   if (s === "No Claim") return "Total Loss / Disputed";
-  if (STATUS_SECTION_ORDER.includes(s as StatusSection)) return s as StatusSection;
+  if ((STATUS_SECTION_ORDER as readonly string[]).includes(s)) return s as AnyStatusSection;
   return "Document Pending";
 }
 
@@ -77,7 +89,7 @@ export function addMeta(job: BodyshopJob): BodyshopJobWithMeta {
 export async function listBodyshopJobs(
   params: ListParams = {}
 ): Promise<BodyshopJobWithMeta[]> {
-  const { search, statusSection, branchIds, limit = 200, select } = params;
+  const { search, statusSection, branchIds, limit = 200, select, jobCategory = "bodyshop" } = params;
 
   if (branchIds && branchIds.length === 0) {
     return [];
@@ -87,6 +99,7 @@ export async function listBodyshopJobs(
   let query = supabaseAdmin
     .from(TABLE_NAME)
     .select(select && select.trim().length > 0 ? select : "*")
+    .eq("job_category", jobCategory)
     .order("ro_date", { ascending: false })
     .limit(limit);
 
@@ -117,6 +130,9 @@ export async function listBodyshopJobs(
 
     // Fallback: filter in-memory seed data.
     const filtered = BODYSHOP_JOBS_SEED.filter((job) => {
+      if (resolveJobCategory((job as { job_category?: unknown }).job_category) !== jobCategory) {
+        return false;
+      }
       if (statusSection && statusSection !== "All" && job.status_section !== statusSection) {
         return false;
       }
@@ -138,9 +154,11 @@ export async function listBodyshopJobs(
 
   return (data ?? []).map((row) => {
     const raw = row as unknown as BodyshopJob;
+    const rowCategory = resolveJobCategory((raw as { job_category?: unknown }).job_category);
     return addMeta({
       ...raw,
-      status_section: normalizeStatusSection((raw as any).status_section),
+      job_category: rowCategory,
+      status_section: normalizeStatusSection((raw as { status_section?: unknown }).status_section, rowCategory),
     });
   });
 }

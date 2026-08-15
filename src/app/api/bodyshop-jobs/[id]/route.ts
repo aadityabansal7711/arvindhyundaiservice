@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { addMeta } from "@/lib/bodyshop-repo";
-import { BodyshopJob, StatusSection } from "@/lib/bodyshop-types";
+import { AnyStatusSection, BodyshopJob, JobCategory, ServiceStatusSection, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
+import { SERVICE_STATUS_SECTION_ORDER } from "@/lib/service-seed";
 import {
   canAccessBranch,
   enforceRateLimit,
@@ -12,6 +13,7 @@ import {
   requireSession,
   validateMutationRequest,
 } from "@/lib/server-auth";
+import { isOwnerUser } from "@/lib/owner-access";
 
 // Ensure the job detail (including photos array) is never served stale.
 export const dynamic = "force-dynamic";
@@ -22,7 +24,7 @@ const STAGE_TABLE = "bodyshop_job_stages";
 const HIDDEN_TABLE = "bodyshop_job_hidden";
 const GM_EMAIL = "servicegm.hyundai@arvindgroup.in";
 const JOB_DETAIL_SELECT =
-  "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,surveyor,service_advisor,mobile_no,claim_intimation_date,claim_no,hap_status,survey_date,approval_date,advisor_remark,whatsapp_date,tentative_labor,promised_date,general_remark,replace_panels,dent_panels,mrs,mrs_date,order_no,order_date,eta_date,received_date,status_section,billing_status,parts_status,created_at,updated_at";
+  "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,surveyor,service_advisor,mobile_no,claim_intimation_date,claim_no,hap_status,survey_date,approval_date,advisor_remark,whatsapp_date,tentative_labor,promised_date,general_remark,replace_panels,dent_panels,mrs,mrs_date,order_no,order_date,eta_date,received_date,status_section,billing_status,parts_status,job_category,work_type,created_at,updated_at";
 const PATCH_BASE_SELECT = `${JOB_DETAIL_SELECT},photos`;
 type CacheEntry<T> = { value: T; expiresAt: number };
 const photoCache = new Map<string, CacheEntry<{ id: string; ro_no: string; photos: string[] }>>();
@@ -87,12 +89,31 @@ function getAllowedNextStatuses(
   return [STATUS_SECTION_ORDER[idx + 1]];
 }
 
-function normalizeStatusSection(raw: unknown): StatusSection {
+/** Service jobs have no branching (unlike Bodyshop's "Approval Pending" split) — purely linear. */
+function getAllowedNextServiceStatuses(
+  current: ServiceStatusSection | null
+): ServiceStatusSection[] {
+  if (!current) return [SERVICE_STATUS_SECTION_ORDER[0]];
+  const idx = (SERVICE_STATUS_SECTION_ORDER as readonly string[]).indexOf(current);
+  if (idx < 0 || idx >= SERVICE_STATUS_SECTION_ORDER.length - 1) return [];
+  return [SERVICE_STATUS_SECTION_ORDER[idx + 1]];
+}
+
+function resolveJobCategory(raw: unknown): JobCategory {
+  return raw === "service" ? "service" : "bodyshop";
+}
+
+function normalizeStatusSection(raw: unknown, category: JobCategory): AnyStatusSection {
   const s = typeof raw === "string" ? raw : "";
+  if (category === "service") {
+    return (SERVICE_STATUS_SECTION_ORDER as readonly string[]).includes(s)
+      ? (s as AnyStatusSection)
+      : SERVICE_STATUS_SECTION_ORDER[0];
+  }
   if (s === "Approval Hold") return "Approval Pending";
   if (s === "No Claim") return "Total Loss / Disputed";
   return (STATUS_SECTION_ORDER as string[]).includes(s)
-    ? (s as StatusSection)
+    ? (s as AnyStatusSection)
     : "Document Pending";
 }
 
@@ -129,6 +150,8 @@ function mapROToBodyshopJob(ro: {
   return {
     id: ro.roNo,
     ro_no: ro.roNo,
+    job_category: "bodyshop",
+    work_type: null,
     branch_id: ro.branchId ?? null,
     ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
     reg_no: ro.vehicle.registrationNo,
@@ -248,11 +271,13 @@ export async function GET(
       if (payload.id !== id) setPhotoCache(payload.id, payload);
       return NextResponse.json(payload);
     }
+    const rowCategory = resolveJobCategory((row as { job_category?: unknown }).job_category);
     return NextResponse.json(
       addMeta({
         ...row,
+        job_category: rowCategory,
         photos: null,
-        status_section: normalizeStatusSection((row as any).status_section),
+        status_section: normalizeStatusSection((row as any).status_section, rowCategory),
       })
     );
   }
@@ -289,8 +314,15 @@ export async function PATCH(
   const userEmail = auth.user.email ?? undefined;
   const isGm = isGmUser(userEmail);
 
-  const toStatus = body.status_section as StatusSection | undefined;
-  if (toStatus && !(STATUS_SECTION_ORDER as readonly string[]).includes(toStatus)) {
+  const toStatus = body.status_section as AnyStatusSection | undefined;
+  // Cheap sanity check only ("is this any known stage at all") — we don't yet
+  // know this job's category (bodyshop vs service), so the real, category-correct
+  // transition check happens later once `mergedBase.job_category` is available.
+  if (
+    toStatus &&
+    !(STATUS_SECTION_ORDER as readonly string[]).includes(toStatus) &&
+    !(SERVICE_STATUS_SECTION_ORDER as readonly string[]).includes(toStatus)
+  ) {
     return NextResponse.json({ error: "Invalid status_section" }, { status: 400 });
   }
   // `remark` is the legacy column. Treat it as "inputer remark" for backward compatibility.
@@ -305,6 +337,13 @@ export async function PATCH(
         (p): p is string => typeof p === "string" && p.length > 0
       )
     : [];
+  const photosRemoveIndex =
+    typeof body.photos_remove_index === "number" && Number.isInteger(body.photos_remove_index)
+      ? body.photos_remove_index
+      : null;
+  if (photosRemoveIndex !== null && !isOwnerUser(auth.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const movement_at_raw =
     typeof body.movement_at === "string" ? body.movement_at.trim() : "";
   let changed_at: string | null = null;
@@ -319,7 +358,10 @@ export async function PATCH(
     changed_at = movementDate.toISOString();
   }
 
-  const needsPhotos = photosAppend.length > 0 || Object.prototype.hasOwnProperty.call(body, "photos");
+  const needsPhotos =
+    photosAppend.length > 0 ||
+    photosRemoveIndex !== null ||
+    Object.prototype.hasOwnProperty.call(body, "photos");
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from(TABLE_NAME)
     .select(needsPhotos ? PATCH_BASE_SELECT : JOB_DETAIL_SELECT)
@@ -362,9 +404,13 @@ export async function PATCH(
 
   const merged: Record<string, unknown> = { ...mergedBase };
   const fromStatus = (merged.status_section as string | null) ?? null;
+  const jobCategory = resolveJobCategory(mergedBase.job_category);
 
   if (toStatus && toStatus !== fromStatus) {
-    const allowedTargets = getAllowedNextStatuses(fromStatus as StatusSection | null);
+    const allowedTargets: AnyStatusSection[] =
+      jobCategory === "service"
+        ? getAllowedNextServiceStatuses(fromStatus as ServiceStatusSection | null)
+        : getAllowedNextStatuses(fromStatus as StatusSection | null);
     if (!allowedTargets.includes(toStatus)) {
       return NextResponse.json(
         {
@@ -415,12 +461,19 @@ export async function PATCH(
       merged[k] = (body as Record<string, unknown>)[k as string];
     }
   }
-  if (photosAppend.length > 0) {
-    const existingPhotos = Array.isArray(merged.photos)
+  if (photosAppend.length > 0 || photosRemoveIndex !== null) {
+    let existingPhotos = Array.isArray(merged.photos)
       ? (merged.photos as unknown[]).filter(
           (p): p is string => typeof p === "string" && p.length > 0
         )
       : [];
+    if (
+      photosRemoveIndex !== null &&
+      photosRemoveIndex >= 0 &&
+      photosRemoveIndex < existingPhotos.length
+    ) {
+      existingPhotos = existingPhotos.filter((_, i) => i !== photosRemoveIndex);
+    }
     merged.photos = [...existingPhotos, ...photosAppend];
   }
 

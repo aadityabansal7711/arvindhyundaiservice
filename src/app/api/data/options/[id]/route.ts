@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma";
 import { isOwnerUser } from "@/lib/owner-access";
 import { readJsonObject, rejectCrossSiteMutation, validateMutationRequest } from "@/lib/server-auth";
 
+const DEPARTMENT_VALUES = new Set(["bodyshop", "workshop", "both"]);
+
 async function checkAuth() {
     const session = await getServerSession(authOptions);
     if (!session || !(session.user as any).permissions?.includes("users.manage")) {
@@ -33,12 +35,24 @@ export async function PATCH(
     try {
         const body = await readJsonObject(req);
         if (body instanceof NextResponse) return body;
-        const data: { label?: string; value?: string | null; sortOrder?: number; branchId?: string | null } = {};
+        const data: {
+            label?: string;
+            value?: string | null;
+            sortOrder?: number;
+            branchId?: string | null;
+            department?: string | null;
+        } = {};
         if (typeof body.label === "string") data.label = body.label.trim();
         if (body.value !== undefined) data.value = body.value === "" ? null : String(body.value).trim();
         if (typeof body.sortOrder === "number") data.sortOrder = body.sortOrder;
         if (body.branchId !== undefined) {
             data.branchId = body.branchId && String(body.branchId).trim() ? String(body.branchId).trim() : null;
+        }
+        if (body.department !== undefined) {
+            if (body.department != null && body.department !== "" && !DEPARTMENT_VALUES.has(String(body.department))) {
+                return NextResponse.json({ error: "department must be bodyshop, workshop, or both" }, { status: 400 });
+            }
+            data.department = body.department && String(body.department).trim() ? String(body.department).trim() : null;
         }
 
         const option = await prisma.dropdownOption.update({

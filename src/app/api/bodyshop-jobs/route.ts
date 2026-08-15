@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBodyshopJobs, ensureSeededOnce } from "@/lib/bodyshop-repo";
-import { BodyshopJob, BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
+import { AnyStatusSection, BodyshopJob, BodyshopJobWithMeta, JobCategory, StatusSection } from "@/lib/bodyshop-types";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getBypassBranchId, getBranchScopeForSessionUser, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { getBranchNameMap } from "@/lib/branch-list";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
+import { SERVICE_STATUS_SECTION_ORDER } from "@/lib/service-seed";
 import { enforceRateLimit, readJsonObject, requireBodyshopAccess, validateMutationRequest } from "@/lib/server-auth";
 import { applyRoPrefix, getRoPrefixForBranchName } from "@/lib/ro-prefix";
+import { cacheGet, cacheSet, clearBodyshopJobsCache } from "@/lib/bodyshop-jobs-cache";
 
 // Photos and job fields are updated frequently (Move/Add actions). Force
 // dynamic behavior so Next does not cache stale responses.
@@ -14,27 +16,14 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const HIDDEN_TABLE = "bodyshop_job_hidden";
+const cacheClear = clearBodyshopJobsCache;
 
-type CacheEntry<T> = { value: T; expiresAt: number };
-const cache = new Map<string, CacheEntry<unknown>>();
-function cacheGet<T>(key: string): T | null {
-  const hit = cache.get(key);
-  if (!hit) return null;
-  if (Date.now() > hit.expiresAt) {
-    cache.delete(key);
-    return null;
-  }
-  return hit.value as T;
-}
-function cacheSet<T>(key: string, value: T, ttlMs: number) {
-  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
-}
-function cacheClear() {
-  cache.clear();
+function sectionOrderFor(category: JobCategory): readonly AnyStatusSection[] {
+  return category === "service" ? SERVICE_STATUS_SECTION_ORDER : STATUS_SECTION_ORDER;
 }
 
-function isValidStatusSection(value: unknown): value is StatusSection {
-  return typeof value === "string" && (STATUS_SECTION_ORDER as readonly string[]).includes(value);
+function isValidStatusSection(value: unknown, category: JobCategory): value is AnyStatusSection {
+  return typeof value === "string" && (sectionOrderFor(category) as readonly string[]).includes(value);
 }
 
 function asText(value: unknown): string | null {
@@ -91,34 +80,16 @@ function mapCurrentStatusToSection(currentStatus: string): StatusSection {
   return STATUS_MAP[currentStatus] ?? "Document Pending";
 }
 
-function normalizeStatusSection(raw: unknown): StatusSection {
+function normalizeStatusSection(raw: unknown, category: JobCategory): AnyStatusSection {
   const s = typeof raw === "string" ? raw : "";
+  if (category === "service") {
+    return (SERVICE_STATUS_SECTION_ORDER as readonly string[]).includes(s)
+      ? (s as AnyStatusSection)
+      : SERVICE_STATUS_SECTION_ORDER[0];
+  }
   if (s === "Approval Hold") return "Approval Pending";
   if (s === "No Claim") return "Total Loss / Disputed";
-
-  // Keep this list in sync with `STATUS_SECTION_ORDER`.
-  const valid: StatusSection[] = [
-    "Document Pending",
-    "Claim Intimation Pending",
-    "Survey Pending",
-    "Approval Pending",
-    "Approval Received",
-    "PNA",
-    "Dismantle",
-    "Mechanical",
-    "Cutting",
-    "Denting",
-    "Painting",
-    "Fitting",
-    "Ready for Pre-Invoice",
-    "Billed but Not Ready",
-    "DO Awaited",
-    "Customer Awaited",
-    "Total Loss / Disputed",
-    "Delivered",
-  ];
-
-  return valid.includes(s as StatusSection) ? (s as StatusSection) : "Document Pending";
+  return (STATUS_SECTION_ORDER as readonly string[]).includes(s) ? (s as AnyStatusSection) : "Document Pending";
 }
 
 function mapROToBodyshopJob(ro: {
@@ -141,6 +112,8 @@ function mapROToBodyshopJob(ro: {
   return {
     id: ro.roNo,
     ro_no: ro.roNo,
+    job_category: "bodyshop",
+    work_type: null,
     branch_id: ro.branchId ?? null,
     ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
     reg_no: ro.vehicle.registrationNo,
@@ -191,6 +164,8 @@ function mapROToBodyshopJobBoard(ro: {
   return {
     id: ro.roNo,
     ro_no: ro.roNo,
+    job_category: "bodyshop",
+    work_type: null,
     branch_id: ro.branchId ?? null,
     ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
     reg_no: ro.vehicle.registrationNo,
@@ -245,7 +220,7 @@ function isMissingOptionalRelationTable(error: unknown): boolean {
 function filterJobs(
   jobs: BodyshopJobWithMeta[],
   search: string | undefined,
-  statusSection: StatusSection | "All",
+  statusSection: AnyStatusSection | "All",
   limit: number
 ): BodyshopJobWithMeta[] {
   let list = jobs;
@@ -272,7 +247,9 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const countsOnly = url.searchParams.get("countsOnly") === "1" || url.searchParams.get("countsOnly") === "true";
   const search = countsOnly ? undefined : (url.searchParams.get("search") ?? undefined);
-  const status = (url.searchParams.get("statusSection") ?? "All") as StatusSection | "All";
+  const status = (url.searchParams.get("statusSection") ?? "All") as AnyStatusSection | "All";
+  const category: JobCategory = (url.searchParams.get("category") ?? "").toLowerCase() === "service" ? "service" : "bodyshop";
+  const sectionOrder = sectionOrderFor(category);
   const view = (url.searchParams.get("view") ?? "board").toLowerCase();
   const branchIdParam = (url.searchParams.get("branchId") ?? "").trim();
   const limitRaw = Number(url.searchParams.get("limit") ?? "200");
@@ -301,12 +278,7 @@ export async function GET(request: NextRequest) {
   if (effectiveBranchIds !== undefined && effectiveBranchIds.length === 0) {
     if (countsOnly) {
       const stages: Record<string, number> = {};
-      for (const s of [
-        "Document Pending", "Claim Intimation Pending", "Survey Pending", "Approval Pending",
-        "Approval Received", "PNA", "Dismantle", "Mechanical", "Cutting", "Denting",
-        "Painting", "Fitting", "Ready for Pre-Invoice", "Billed but Not Ready",
-        "DO Awaited", "Customer Awaited", "Total Loss / Disputed", "Delivered",
-      ] as StatusSection[]) {
+      for (const s of sectionOrder) {
         stages[s] = 0;
       }
       return NextResponse.json({ all: 0, stages });
@@ -315,17 +287,12 @@ export async function GET(request: NextRequest) {
   }
 
   if (countsOnly) {
-    const cacheKey = `countsOnly:openOnly=${openOnly ? 1 : 0};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
+    const cacheKey = `countsOnly:category=${category};openOnly=${openOnly ? 1 : 0};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
     const cached = cacheGet<{ all: number; stages: Record<string, number> }>(cacheKey);
     if (cached) return NextResponse.json(cached);
 
     const stages: Record<string, number> = {};
-    for (const s of [
-      "Document Pending", "Claim Intimation Pending", "Survey Pending", "Approval Pending",
-      "Approval Received", "PNA", "Dismantle", "Mechanical", "Cutting", "Denting",
-      "Painting", "Fitting", "Ready for Pre-Invoice", "Billed but Not Ready",
-      "DO Awaited", "Customer Awaited", "Total Loss / Disputed", "Delivered",
-    ] as StatusSection[]) {
+    for (const s of sectionOrder) {
       stages[s] = 0;
     }
 
@@ -347,12 +314,13 @@ export async function GET(request: NextRequest) {
       statusSection: "All",
       branchIds: effectiveBranchIds,
       select: "id,ro_no,branch_id,ro_date,status_section,promised_date",
+      jobCategory: category,
     });
 
-    const byRo = new Map<string, StatusSection>();
+    const byRo = new Map<string, AnyStatusSection>();
     for (const job of jobs) {
       if (hiddenIds.has(job.id) || hiddenIds.has(job.ro_no)) continue;
-      byRo.set(job.ro_no, normalizeStatusSection(job.status_section));
+      byRo.set(job.ro_no, normalizeStatusSection(job.status_section, category));
     }
 
     if (openOnly) {
@@ -376,7 +344,7 @@ export async function GET(request: NextRequest) {
   }
 
   const term = search?.trim();
-  const cacheKey = `list:view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
+  const cacheKey = `list:category=${category};view=${view};openOnly=${openOnly ? 1 : 0};status=${status};limit=${limit};search=${term ?? ""};branch=${effectiveBranchIds?.join(",") ?? "ALL"}`;
   const cached = cacheGet<BodyshopJobWithMeta[]>(cacheKey);
   if (cached) return NextResponse.json(cached);
 
@@ -390,7 +358,7 @@ export async function GET(request: NextRequest) {
   // Keep board payload lightweight. Full photo arrays are fetched only on detail
   // open to avoid sending large base64/json blobs on list load.
   const boardSelect =
-    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,status_section,promised_date,created_at,updated_at";
+    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,status_section,job_category,work_type,promised_date,created_at,updated_at";
 
   const [supabaseJobs, hiddenRowsResult] = await Promise.all([
     listBodyshopJobs({
@@ -399,6 +367,7 @@ export async function GET(request: NextRequest) {
       search,
       branchIds: effectiveBranchIds,
       select: isBoardView ? boardSelect : undefined,
+      jobCategory: category,
     }),
     // Deleted/tombstoned IDs so refresh doesn't re-add them from Prisma.
     supabaseAdmin.from(HIDDEN_TABLE).select("job_id"),
@@ -503,13 +472,15 @@ export async function POST(request: NextRequest) {
   const id = applyRoPrefix(branchName, rawId);
 
   const now = new Date().toISOString();
-  const requestedStatus = body?.status_section ?? "Document Pending";
-  if (!isValidStatusSection(requestedStatus)) {
+  const jobCategory: JobCategory = body?.job_category === "service" ? "service" : "bodyshop";
+  const requestedStatus = body?.status_section ?? sectionOrderFor(jobCategory)[0];
+  if (!isValidStatusSection(requestedStatus, jobCategory)) {
     return NextResponse.json({ error: "Invalid status_section" }, { status: 400 });
   }
   const payload: Partial<BodyshopJob> & { id: string; updated_at: string } = {
     id,
     ro_no: id,
+    job_category: jobCategory,
     branch_id: asText(body?.branch_id),
     ro_date: asText(body?.ro_date),
     reg_no: asText(body?.reg_no),
