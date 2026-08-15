@@ -12,6 +12,7 @@ import {
   GDMS_NAV_TIMEOUT_MS,
   GDMS_OTP_SENT_TIMEOUT_MS,
   GDMS_HOME_PATH,
+  GDMS_LOGIN_FORM_VISIBLE_TIMEOUT_MS,
   GDMS_RO_LIST_PATH,
   GDMS_RO_PAGE_SIZE,
   GDMS_SELECTORS,
@@ -91,10 +92,24 @@ export async function startLogin(params: {
   const page = await context.newPage();
 
   try {
+    console.log(`[GDMS] Opening login page for branch ${params.branchId}...`);
+    // "commit" resolves as soon as the response headers arrive, rather than
+    // waiting for the full document + its scripts to finish loading — GDMS's
+    // login page can take a while past that point (analytics/anti-bot JS,
+    // slow subresources) even once the response itself came back quickly, so
+    // waiting on "domcontentloaded" here was timing out well before the form
+    // was actually unusable to fill in.
     await page.goto(`${GDMS_BASE_URL}${GDMS_LOGIN_PAGE_PATH}`, {
       timeout: GDMS_NAV_TIMEOUT_MS,
-      waitUntil: "domcontentloaded",
+      waitUntil: "commit",
     });
+    console.log("[GDMS] Login URL committed, waiting for the form to render...");
+
+    await page.locator(GDMS_SELECTORS.usrId).waitFor({
+      state: "visible",
+      timeout: GDMS_LOGIN_FORM_VISIBLE_TIMEOUT_MS,
+    });
+    console.log("[GDMS] Username field visible");
 
     await page.fill(GDMS_SELECTORS.usrId, params.gdmsUserId);
     await page.fill(GDMS_SELECTORS.usrPswdNo, params.gdmsPassword);

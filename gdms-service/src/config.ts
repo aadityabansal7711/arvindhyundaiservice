@@ -43,7 +43,9 @@ export const GDMS_SESSION_TTL_MS = 10 * 60 * 1000;
 export const GDMS_MAX_CONCURRENT_SESSIONS = 3;
 
 /** Generous timeouts — GDMS is a slow enterprise portal, not a modern SPA. */
-export const GDMS_NAV_TIMEOUT_MS = 30_000;
+export const GDMS_NAV_TIMEOUT_MS = 90_000;
+/** How long to wait for the login form to actually render after navigation "commits" (headers received). */
+export const GDMS_LOGIN_FORM_VISIBLE_TIMEOUT_MS = 60_000;
 export const GDMS_OTP_SENT_TIMEOUT_MS = 20_000;
 export const GDMS_LOGIN_VERIFY_TIMEOUT_MS = 20_000;
 /** Best-effort logout on cleanup — short timeout since this must never hold up session teardown. */
