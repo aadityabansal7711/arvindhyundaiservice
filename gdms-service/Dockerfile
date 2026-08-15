@@ -1,7 +1,9 @@
 # Playwright's own image bundles Chromium plus every system library it needs
 # to run — this is what Vercel's serverless functions can't provide, and is
 # the entire reason this service exists as a separate always-on deployment.
-FROM mcr.microsoft.com/playwright:v1.60.0-jammy
+# Must match the playwright npm version in package-lock.json — a mismatch
+# makes chromium.launch() fail because the bundled browser build won't match.
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy
 
 WORKDIR /app
 

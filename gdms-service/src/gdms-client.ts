@@ -76,7 +76,17 @@ export async function startLogin(params: {
   gdmsUserId: string;
   gdmsPassword: string;
 }): Promise<string> {
-  const browser = await chromium.launch({ headless: true });
+  let browser: import("playwright").Browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+  } catch (err) {
+    throw new GdmsLoginError(
+      err instanceof Error
+        ? `Headless browser failed to start: ${err.message}`
+        : "Headless browser failed to start"
+    );
+  }
+
   const context = await browser.newContext();
   const page = await context.newPage();
 

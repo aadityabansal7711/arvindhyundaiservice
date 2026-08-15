@@ -20,26 +20,46 @@ export type GdmsSessionMeta = {
   stage: "awaiting_otp" | "authenticated";
 };
 
+function normalizeServiceUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, "");
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 function getServiceConfig(): { url: string; token: string } {
   const url = process.env.GDMS_SERVICE_URL;
   const token = process.env.GDMS_SERVICE_TOKEN;
   if (!url || !token) {
     throw new Error("Missing GDMS_SERVICE_URL/GDMS_SERVICE_TOKEN env vars.");
   }
-  return { url: url.replace(/\/$/, ""), token };
+  return { url: normalizeServiceUrl(url), token };
 }
 
 /** Throws GdmsServiceError (with the service's own status/message) on any non-2xx response. */
 async function callGdmsService<T>(path: string, body?: unknown): Promise<T> {
-  const { url, token } = getServiceConfig();
-  const res = await fetch(`${url}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let url: string;
+  let token: string;
+  try {
+    ({ url, token } = getServiceConfig());
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "GDMS service is not configured";
+    throw new GdmsServiceError(message, 500);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${url}${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "network error";
+    throw new GdmsServiceError(`Could not reach GDMS service at ${url}: ${detail}`, 502);
+  }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const message = typeof json?.error === "string" ? json.error : "GDMS service request failed";

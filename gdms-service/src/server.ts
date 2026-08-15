@@ -54,6 +54,9 @@ app.post("/login/start", async (req: Request, res: Response) => {
     const sessionId = await startLogin({ branchId, appUserId, gdmsUserId, gdmsPassword });
     res.json({ sessionId });
   } catch (err) {
+    if (!(err instanceof GdmsLoginError)) {
+      console.error("[gdms-service] login/start failed:", err);
+    }
     const message =
       err instanceof GdmsLoginError ? err.message : "Could not reach GDMS. Please try again in a moment.";
     res.status(502).json({ error: message });
