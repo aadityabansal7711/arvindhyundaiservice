@@ -13,6 +13,20 @@ import {
 const TABLE_NAME = "bodyshop_jobs";
 const DEFAULT_STATUS_SECTION = "Document Pending";
 
+/**
+ * Billing totals for one RO, as returned by gdms-service's Repair Billing
+ * fetch (see gdms-service/src/billing-mapper.ts, where this shape is
+ * actually computed — this app never talks to GDMS directly, so it just
+ * mirrors the wire shape here).
+ */
+export type BillingTotals = {
+  roNo: string;
+  billingNo: string | null;
+  laborAmount: number;
+  laborDiscountAmount: number;
+  partsAmount: number;
+};
+
 export type GdmsUpsertResult = {
   created: number;
   skipped: number;
@@ -66,6 +80,11 @@ export function buildInsertPayload(
     status_section: statusSection,
     billing_status: null,
     parts_status: null,
+    billed_labor_amount: null,
+    labor_discount_amount: null,
+    billed_parts_amount: null,
+    billing_no: null,
+    billing_fetched_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -202,4 +221,77 @@ async function upsertOne(
       message: err instanceof Error ? err.message : "Unknown error",
     });
   }
+}
+
+export type GdmsBillingApplyResult = {
+  updated: number;
+  /** ROs GDMS billing returned that have no matching row in bodyshop_jobs yet — run an RO List fetch for them first. */
+  notFound: string[];
+  errors: { roNo: string; message: string }[];
+};
+
+/**
+ * Writes labour/parts billing totals onto existing bodyshop_jobs rows,
+ * matched by RO number (with the branch's RO prefix applied). Unlike
+ * `upsertBodyshopJobsFromGdms`, this never creates a new row — a billed RO
+ * with no existing record means the RO List fetch hasn't picked it up yet,
+ * so it's reported in `notFound` rather than inserted half-populated.
+ *
+ * Billing fields are always overwritten (GDMS is the sole source of truth
+ * here and staff never edit them by hand), unlike the rest of a job's
+ * fields, which upsertBodyshopJobsFromGdms deliberately never touches once set.
+ */
+export async function applyBillingToBodyshopJobs(
+  totals: BillingTotals[],
+  branchName: string | null
+): Promise<GdmsBillingApplyResult> {
+  const result: GdmsBillingApplyResult = { updated: 0, notFound: [], errors: [] };
+  const now = new Date().toISOString();
+
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < totals.length; i += CHUNK_SIZE) {
+    const chunk = totals.slice(i, i + CHUNK_SIZE);
+    await Promise.all(
+      chunk.map(async (billing) => {
+        const rawRoNo = billing.roNo?.trim();
+        if (!rawRoNo) return;
+        const id = applyRoPrefix(branchName, rawRoNo);
+
+        try {
+          const { data: existing, error: existingErr } = await supabaseAdmin
+            .from(TABLE_NAME)
+            .select("id")
+            .eq("id", id)
+            .maybeSingle();
+          if (existingErr) throw new Error(existingErr.message);
+
+          if (!existing) {
+            result.notFound.push(rawRoNo);
+            return;
+          }
+
+          const { error: updateErr } = await supabaseAdmin
+            .from(TABLE_NAME)
+            .update({
+              billed_labor_amount: billing.laborAmount,
+              labor_discount_amount: billing.laborDiscountAmount,
+              billed_parts_amount: billing.partsAmount,
+              billing_no: billing.billingNo,
+              billing_fetched_at: now,
+              updated_at: now,
+            })
+            .eq("id", id);
+          if (updateErr) throw new Error(updateErr.message);
+          result.updated += 1;
+        } catch (err) {
+          result.errors.push({
+            roNo: rawRoNo,
+            message: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
+      })
+    );
+  }
+
+  return result;
 }

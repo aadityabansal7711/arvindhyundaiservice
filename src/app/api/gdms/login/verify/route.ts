@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GdmsOtpError, verifyOtp } from "@/lib/gdms/client";
-import { getSession } from "@/lib/gdms/session-store";
+import { GdmsServiceError, getGdmsSessionMeta, verifyGdmsOtp } from "@/lib/gdms/service-client";
 import {
   canAccessBranch,
   enforceRateLimit,
@@ -36,7 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Enter the 6-digit OTP" }, { status: 400 });
   }
 
-  const session = getSession(sessionId);
+  const session = await getGdmsSessionMeta(sessionId);
   if (!session) {
     return NextResponse.json(
       { error: "This GDMS session has expired. Please start again." },
@@ -52,10 +51,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await verifyOtp(sessionId, otp);
+    await verifyGdmsOtp(sessionId, otp);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const message = err instanceof GdmsOtpError ? err.message : "OTP verification failed. Please try again.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const message =
+      err instanceof GdmsServiceError ? err.message : "OTP verification failed. Please try again.";
+    const status = err instanceof GdmsServiceError ? err.status : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

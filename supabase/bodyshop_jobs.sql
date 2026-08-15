@@ -63,6 +63,19 @@ create index if not exists idx_bodyshop_jobs_category_open_board
 -- manually-added records and rows never re-touched since this column was added.
 alter table public.bodyshop_jobs add column if not exists work_type text;
 
+-- RO billing: pulled from GDMS's "Repair Billing" section (list + per-RO
+-- Labour/Parts detail), not from the Repair Order List used elsewhere in this
+-- file. billed_labor_amount is the pre-tax labour total minus the discount
+-- shown on that screen; billed_parts_amount is the pre-tax parts total (GDMS
+-- doesn't discount parts). Unlike most GDMS-sourced fields, these are always
+-- refreshed on every fetch (GDMS is the sole source of truth, staff never
+-- edit them) — see applyBillingToBodyshopJobs() in src/lib/gdms/upsert.ts.
+alter table public.bodyshop_jobs add column if not exists billed_labor_amount numeric;
+alter table public.bodyshop_jobs add column if not exists labor_discount_amount numeric;
+alter table public.bodyshop_jobs add column if not exists billed_parts_amount numeric;
+alter table public.bodyshop_jobs add column if not exists billing_no text;
+alter table public.bodyshop_jobs add column if not exists billing_fetched_at timestamptz;
+
 -- Backfill missing status values to the new initial stage.
 update public.bodyshop_jobs
 set status_section = 'Document Pending'

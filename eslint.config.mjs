@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Separate deployable (its own package.json/tsconfig/eslint concerns).
+    "gdms-service/**",
   ]),
 ]);
 

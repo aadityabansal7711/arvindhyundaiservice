@@ -7,6 +7,21 @@ import { apiPost } from "@/lib/api";
 
 type Branch = { id: string; name: string };
 
+type BillingSummary = {
+  // ROs GDMS's Repair Billing screen returned for this date range.
+  totalBilled: number;
+  // How many existing ROs got their labour/parts amounts filled in.
+  updated: number;
+  // Billed ROs with no matching row yet — usually means the RO List fetch
+  // above hasn't picked them up (different branch, or created outside the
+  // date range searched).
+  notFound: string[];
+  // The Repair Billing screen itself failed to load — RO import above still
+  // succeeded, just without billing data this time.
+  fetchFailed: boolean;
+  errors: { roNo: string; message: string }[];
+};
+
 type FetchSummary = {
   totalFetched: number;
   created: number;
@@ -18,6 +33,7 @@ type FetchSummary = {
   // were corrected, nothing else on the record was touched.
   reclassified: number;
   errors: { roNo: string; message: string }[];
+  billing: BillingSummary;
 };
 
 type Step = "setup" | "connecting" | "otp" | "verifying" | "results";
@@ -287,6 +303,69 @@ export function GdmsFetchModal({ branches, onClose, onImported }: Props) {
                   </ul>
                 </details>
               )}
+
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Billing (Labour + Parts)
+                </div>
+                {result.billing.fetchFailed ? (
+                  <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    Couldn&apos;t reach GDMS&apos;s Repair Billing screen this time — RO import above still
+                    completed. Try fetching again to pick up billing amounts.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                        <div className="text-2xl font-bold text-slate-900">{result.billing.totalBilled}</div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                          Billed ROs found
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                        <div className="text-2xl font-bold text-slate-900">{result.billing.updated}</div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                          Labour/Parts updated
+                        </div>
+                      </div>
+                    </div>
+                    {result.billing.notFound.length > 0 && (
+                      <details className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <summary className="text-sm font-semibold text-amber-700 cursor-pointer">
+                          {result.billing.notFound.length} billed RO
+                          {result.billing.notFound.length !== 1 ? "s" : ""} not found in app
+                        </summary>
+                        <p className="mt-1 text-xs text-amber-700">
+                          Run a Fetch from GDMS covering these ROs&apos; original dates first, then fetch billing
+                          again.
+                        </p>
+                        <ul className="mt-2 space-y-1 text-xs text-amber-700">
+                          {result.billing.notFound.map((roNo) => (
+                            <li key={roNo} className="font-bold">
+                              {roNo}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {result.billing.errors.length > 0 && (
+                      <details className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                        <summary className="text-sm font-semibold text-rose-700 cursor-pointer">
+                          {result.billing.errors.length} billing lookup
+                          {result.billing.errors.length !== 1 ? "s" : ""} failed
+                        </summary>
+                        <ul className="mt-2 space-y-1 text-xs text-rose-700">
+                          {result.billing.errors.map((e, i) => (
+                            <li key={`${e.roNo}-${i}`}>
+                              <span className="font-bold">{e.roNo}</span>: {e.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

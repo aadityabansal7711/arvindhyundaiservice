@@ -207,6 +207,8 @@ function ServiceDeliveredPageInner() {
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Customer</th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Model</th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Type</th>
+                    <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Labour Amt</th>
+                    <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Parts Amt</th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Advisor</th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Status</th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">Actions</th>
@@ -226,6 +228,16 @@ function ServiceDeliveredPageInner() {
                       <td className="px-5 py-3 text-sm text-slate-900 font-medium">{job.customer_name ?? "—"}</td>
                       <td className="px-5 py-3 text-sm text-slate-700">{job.model ?? "—"}</td>
                       <td className="px-5 py-3 text-sm text-slate-700">{getWorkTypeLabel(job.work_type) ?? "—"}</td>
+                      <td className="px-5 py-3 text-sm text-slate-700">
+                        {job.billed_labor_amount != null
+                          ? `₹${job.billed_labor_amount.toLocaleString("en-IN")}`
+                          : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate-700">
+                        {job.billed_parts_amount != null
+                          ? `₹${job.billed_parts_amount.toLocaleString("en-IN")}`
+                          : "—"}
+                      </td>
                       <td className="px-5 py-3 text-sm text-slate-700">{job.service_advisor ?? "—"}</td>
                       <td className="px-5 py-3 text-sm">
                         <div className="flex items-center gap-2">

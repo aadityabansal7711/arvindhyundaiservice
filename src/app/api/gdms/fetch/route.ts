@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GdmsOtpError, fetchRepairOrders } from "@/lib/gdms/client";
-import { getSession } from "@/lib/gdms/session-store";
-import { upsertBodyshopJobsFromGdms } from "@/lib/gdms/upsert";
+import { GdmsServiceError, fetchGdmsRos, getGdmsSessionMeta } from "@/lib/gdms/service-client";
+import { applyBillingToBodyshopJobs, upsertBodyshopJobsFromGdms } from "@/lib/gdms/upsert";
+import type { GdmsRoRow } from "@/lib/gdms/mapper";
 import { getBranchNameMap } from "@/lib/branch-list";
 import { clearBodyshopJobsCache } from "@/lib/bodyshop-jobs-cache";
 import {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden branch" }, { status: 403 });
   }
 
-  const session = getSession(sessionId);
+  const session = await getGdmsSessionMeta(sessionId);
   if (!session) {
     return NextResponse.json(
       { error: "This GDMS session has expired. Please start again." },
@@ -75,25 +75,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // The gdms-service call does the RO-list fetch, the Repair Billing fetch
+  // (isolated from RO-list failure on its side), and session teardown all in
+  // one round trip — see gdms-service/src/server.ts's POST /fetch.
+  let fetchResult: Awaited<ReturnType<typeof fetchGdmsRos>>;
   try {
-    const rows = await fetchRepairOrders(sessionId, dateFrom, dateTo);
-    console.log(
-      "[gdms-debug] roNo -> modelCode:",
-      JSON.stringify(rows.map((r) => ({ roNo: r.roNo, modelCode: r.modelCode })), null, 2)
-    );
-    const branchNameMap = await getBranchNameMap().catch(() => new Map<string, string>());
-    const branchName = branchNameMap.get(branchId) ?? null;
-    const result = await upsertBodyshopJobsFromGdms(rows, branchId, branchName);
-    clearBodyshopJobsCache();
-    return NextResponse.json({
-      totalFetched: rows.length,
-      created: result.created,
-      skipped: result.skipped,
-      reclassified: result.reclassified,
-      errors: result.errors,
-    });
+    fetchResult = await fetchGdmsRos(sessionId, dateFrom, dateTo);
   } catch (err) {
-    const message = err instanceof GdmsOtpError ? err.message : "Failed to fetch ROs from GDMS.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const message = err instanceof GdmsServiceError ? err.message : "Failed to fetch ROs from GDMS.";
+    const status = err instanceof GdmsServiceError ? err.status : 502;
+    return NextResponse.json({ error: message }, { status });
   }
+  const { billingTotals, billingFetchErrors, billingFetchFailed } = fetchResult;
+  const rows = fetchResult.rows as unknown as GdmsRoRow[];
+
+  console.log(
+    "[gdms-debug] roNo -> modelCode:",
+    JSON.stringify(rows.map((r) => ({ roNo: r.roNo, modelCode: r.modelCode })), null, 2)
+  );
+
+  const branchNameMap = await getBranchNameMap().catch(() => new Map<string, string>());
+  const branchName = branchNameMap.get(branchId) ?? null;
+  const result = await upsertBodyshopJobsFromGdms(rows, branchId, branchName);
+  const billingResult =
+    billingTotals.length > 0
+      ? await applyBillingToBodyshopJobs(billingTotals, branchName)
+      : { updated: 0, notFound: [], errors: [] };
+
+  clearBodyshopJobsCache();
+
+  return NextResponse.json({
+    totalFetched: rows.length,
+    created: result.created,
+    skipped: result.skipped,
+    reclassified: result.reclassified,
+    errors: result.errors,
+    billing: {
+      totalBilled: billingTotals.length,
+      updated: billingResult.updated,
+      notFound: billingResult.notFound,
+      fetchFailed: billingFetchFailed,
+      errors: [...billingFetchErrors, ...billingResult.errors],
+    },
+  });
 }

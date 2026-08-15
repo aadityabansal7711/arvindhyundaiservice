@@ -1,0 +1,22 @@
+{
+  "name": "gdms-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Always-on browser-automation service for the Hyundai GDMS/NDMS dealer portal. Runs the headless-Chromium login/OTP/fetch flow that the main app (deployed serverless on Vercel) cannot host itself.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test:unit": "node --import tsx --test tests/unit/billing-mapper.spec.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.19.35",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

@@ -820,6 +820,12 @@ function BodyshopDashboardPageInner() {
                           Type
                         </th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
+                          Labour Amt
+                        </th>
+                        <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
+                          Parts Amt
+                        </th>
+                        <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
                           Advisor
                         </th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">
@@ -862,6 +868,16 @@ function BodyshopDashboardPageInner() {
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
                             {getWorkTypeLabel(job.work_type) ?? "—"}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-slate-700">
+                            {job.billed_labor_amount != null
+                              ? `₹${job.billed_labor_amount.toLocaleString("en-IN")}`
+                              : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-slate-700">
+                            {job.billed_parts_amount != null
+                              ? `₹${job.billed_parts_amount.toLocaleString("en-IN")}`
+                              : "—"}
                           </td>
                           <td className="px-5 py-3 text-sm text-slate-700">
                             {job.service_advisor ?? "—"}

@@ -145,6 +145,11 @@ function mapROToBodyshopJob(ro: {
     status_section,
     billing_status: null,
     parts_status: null,
+    billed_labor_amount: null,
+    labor_discount_amount: null,
+    billed_parts_amount: null,
+    billing_no: null,
+    billing_fetched_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -197,6 +202,11 @@ function mapROToBodyshopJobBoard(ro: {
     status_section,
     billing_status: null,
     parts_status: null,
+    billed_labor_amount: null,
+    labor_discount_amount: null,
+    billed_parts_amount: null,
+    billing_no: null,
+    billing_fetched_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -358,7 +368,7 @@ export async function GET(request: NextRequest) {
   // Keep board payload lightweight. Full photo arrays are fetched only on detail
   // open to avoid sending large base64/json blobs on list load.
   const boardSelect =
-    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,status_section,job_category,work_type,promised_date,created_at,updated_at";
+    "id,ro_no,branch_id,ro_date,reg_no,customer_name,model,insurance_company,service_advisor,mobile_no,status_section,job_category,work_type,promised_date,created_at,updated_at,billed_labor_amount,labor_discount_amount,billed_parts_amount,billing_no,billing_fetched_at";
 
   const [supabaseJobs, hiddenRowsResult] = await Promise.all([
     listBodyshopJobs({

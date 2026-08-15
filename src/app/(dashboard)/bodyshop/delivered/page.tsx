@@ -300,6 +300,12 @@ function DeliveredPageInner() {
                       Type
                     </th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                      Labour Amt
+                    </th>
+                    <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                      Parts Amt
+                    </th>
+                    <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
                       Advisor
                     </th>
                     <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-widest">
@@ -396,6 +402,16 @@ function DeliveredPageInner() {
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
                         {getWorkTypeLabel(job.work_type) ?? "—"}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate-700">
+                        {job.billed_labor_amount != null
+                          ? `₹${job.billed_labor_amount.toLocaleString("en-IN")}`
+                          : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-slate-700">
+                        {job.billed_parts_amount != null
+                          ? `₹${job.billed_parts_amount.toLocaleString("en-IN")}`
+                          : "—"}
                       </td>
                       <td className="px-5 py-3 text-sm text-slate-700">
                         {job.service_advisor ?? "—"}

@@ -8,6 +8,20 @@ export const GDMS_RO_LIST_PATH = "/ser/serc/selectRepairOrderList.json";
 /** GDMS's own "Logout" nav button navigates here (`fnLogOut()` in the site's JS). */
 export const GDMS_LOGOUT_PATH = "/cmm/cmmi/selectLogoutAction.dms";
 
+/**
+ * GDMS's "Repair Billing" section — a separate screen from the Repair Order
+ * List above. Its list gives the RO numbers billed in a date range; its
+ * detail/Labour/Parts endpoints give the actual billing line items for one
+ * RO. Paths captured from a live HAR export.
+ */
+export const GDMS_BILLING_LIST_PATH = "/ser/serd/selectRepairBillingList.json";
+export const GDMS_BILLING_DETAIL_PATH = "/ser/serd/selectRepairBillingDetail.json";
+export const GDMS_BILLING_LABOUR_PATH = "/ser/serd/selectRepairBillingLabr.json";
+export const GDMS_BILLING_PART_PATH = "/ser/serd/selectRepairBillingPart.json";
+export const GDMS_BILLING_PAGE_SIZE = 50;
+/** Safety cap on how many billed ROs one fetch will pull Labour/Parts detail for. */
+export const GDMS_BILLING_MAX_ROS = 300;
+
 /** Real element IDs on the GDMS login page, captured from a live HAR export. */
 export const GDMS_SELECTORS = {
   usrId: "#usrId",

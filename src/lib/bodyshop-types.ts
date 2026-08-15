@@ -68,6 +68,15 @@ export interface BodyshopJob {
   job_category: JobCategory;
   /** Raw GDMS work-type code (e.g. "AR", "PS") — null for manually-added records or rows never re-touched since this column was added. Use `getWorkTypeLabel()` to display it. */
   work_type: string | null;
+  /** Pre-tax labour total minus discount, from GDMS's Repair Billing screen. Null until a billing fetch has matched this RO. */
+  billed_labor_amount: number | null;
+  /** Discount subtracted from the raw labour total to get `billed_labor_amount`. */
+  labor_discount_amount: number | null;
+  /** Pre-tax parts total from GDMS's Repair Billing screen (no discount applies to parts). */
+  billed_parts_amount: number | null;
+  /** GDMS's own billing number (`bilngNo`) for this RO, e.g. "B202600512". */
+  billing_no: string | null;
+  billing_fetched_at: string | null;
   created_at: string;
   updated_at: string;
 }

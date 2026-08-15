@@ -189,6 +189,11 @@ function mapROToBodyshopJob(ro: {
     status_section,
     billing_status: null,
     parts_status: null,
+    billed_labor_amount: null,
+    labor_discount_amount: null,
+    billed_parts_amount: null,
+    billing_no: null,
+    billing_fetched_at: null,
     created_at: now,
     updated_at: now,
   };

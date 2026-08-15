@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { decryptSecret } from "@/lib/gdms/crypto";
-import { GdmsLoginError, startLogin } from "@/lib/gdms/client";
+import { GdmsServiceError, startGdmsLogin } from "@/lib/gdms/service-client";
 import {
   canAccessBranch,
   enforceRateLimit,
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const sessionId = await startLogin({
+    const { sessionId } = await startGdmsLogin({
       branchId,
       appUserId: auth.user.id ?? auth.user.email ?? "unknown",
       gdmsUserId: credential.gdmsUserId,
@@ -64,9 +64,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sessionId });
   } catch (err) {
     const message =
-      err instanceof GdmsLoginError
-        ? err.message
-        : "Could not reach GDMS. Please try again in a moment.";
-    return NextResponse.json({ error: message }, { status: 502 });
+      err instanceof GdmsServiceError ? err.message : "Could not reach GDMS. Please try again in a moment.";
+    const status = err instanceof GdmsServiceError ? err.status : 502;
+    return NextResponse.json({ error: message }, { status });
   }
 }
