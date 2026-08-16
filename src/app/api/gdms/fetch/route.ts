@@ -89,11 +89,6 @@ export async function POST(request: NextRequest) {
   const { billingTotals, billingFetchErrors, billingFetchFailed } = fetchResult;
   const rows = fetchResult.rows as unknown as GdmsRoRow[];
 
-  console.log(
-    "[gdms-debug] roNo -> modelCode:",
-    JSON.stringify(rows.map((r) => ({ roNo: r.roNo, modelCode: r.modelCode })), null, 2)
-  );
-
   const branchNameMap = await getBranchNameMap().catch(() => new Map<string, string>());
   const branchName = branchNameMap.get(branchId) ?? null;
   const result = await upsertBodyshopJobsFromGdms(rows, branchId, branchName);

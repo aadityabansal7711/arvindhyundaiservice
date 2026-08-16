@@ -1,7 +1,6 @@
 // Next.js route handlers can reject large JSON bodies; base64 expands size ~33%.
 // To make uploads deterministic, keep the final base64 data URL length very small.
 // 60KB cap is intentionally conservative so the JSON request body stays under limits.
-const MAX_SIZE_BYTES = 30 * 1024; // (not strictly required anymore, but kept for guardrails)
 const MAX_FALLBACK_DATAURL_BYTES = 70 * 1024; // raw bytes (fallback only when encoding fails)
 const MAX_DATAURL_LENGTH = 60 * 1024; // final data URL string length cap (deterministic)
 /** Raw HEIC fallback only when conversion fails. */

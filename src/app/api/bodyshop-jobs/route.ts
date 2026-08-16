@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBodyshopJobs, ensureSeededOnce } from "@/lib/bodyshop-repo";
-import { AnyStatusSection, BodyshopJob, BodyshopJobWithMeta, JobCategory, StatusSection } from "@/lib/bodyshop-types";
+import { AnyStatusSection, BodyshopJob, BodyshopJobWithMeta, JobCategory } from "@/lib/bodyshop-types";
 import supabaseAdmin from "@/lib/supabase-admin";
 import { getBypassBranchId, getBranchScopeForSessionUser, isBypassOnlyUser } from "@/lib/bypass-only-user";
 import { getBranchNameMap } from "@/lib/branch-list";
@@ -49,37 +49,6 @@ function asOptionalNumber(value: unknown): number | null {
   return Number.isFinite(next) ? next : null;
 }
 
-const STATUS_MAP: Record<string, StatusSection> = {
-  OPEN: "Document Pending",
-  DOCUMENT_PENDING: "Document Pending",
-  CLAIM_INTIMATION_PENDING: "Claim Intimation Pending",
-  SURVEY_PENDING: "Survey Pending",
-  "Survey Pending": "Survey Pending",
-  "Document Pending": "Document Pending",
-  "Claim Intimation Pending": "Claim Intimation Pending",
-  "Approval Pending": "Approval Pending",
-  "Approval Hold": "Approval Pending",
-  "Approval Received": "Approval Received",
-  PNA: "PNA",
-  Dismantle: "Dismantle",
-  Mechanical: "Mechanical",
-  Cutting: "Cutting",
-  Denting: "Denting",
-  Painting: "Painting",
-  Fitting: "Fitting",
-  "Ready for Pre-Invoice": "Ready for Pre-Invoice",
-  "Billed but Not Ready": "Billed but Not Ready",
-  "DO Awaited": "DO Awaited",
-  "Customer Awaited": "Customer Awaited",
-  "Total Loss / Disputed": "Total Loss / Disputed",
-  "No Claim": "Total Loss / Disputed",
-  Delivered: "Delivered",
-};
-
-function mapCurrentStatusToSection(currentStatus: string): StatusSection {
-  return STATUS_MAP[currentStatus] ?? "Document Pending";
-}
-
 function normalizeStatusSection(raw: unknown, category: JobCategory): AnyStatusSection {
   const s = typeof raw === "string" ? raw : "";
   if (category === "service") {
@@ -90,141 +59,6 @@ function normalizeStatusSection(raw: unknown, category: JobCategory): AnyStatusS
   if (s === "Approval Hold") return "Approval Pending";
   if (s === "No Claim") return "Total Loss / Disputed";
   return (STATUS_SECTION_ORDER as readonly string[]).includes(s) ? (s as AnyStatusSection) : "Document Pending";
-}
-
-function mapROToBodyshopJob(ro: {
-  roNo: string;
-  branchId: string | null;
-  vehicleInDate: Date;
-  committedDeliveryDate: Date | null;
-  currentStatus: string;
-  serviceAdvisorName: string | null;
-  panelsNewReplace: number | null;
-  panelsDent: number | null;
-  vehicle: { registrationNo: string; model: string; customer: { name: string; mobile: string } };
-  advisor: { name: string } | null;
-  insuranceClaim?: { insuranceCompany: string; claimNo: string | null; claimIntimationDate: Date | null; hapFlag: boolean | null } | null;
-  survey?: { surveyorName: string | null; surveyDate: Date | null; approvalDate: Date | null } | null;
-  billing?: { actualLabour: number; billAmount: number } | null;
-}): BodyshopJob {
-  const status_section = mapCurrentStatusToSection(ro.currentStatus);
-  const now = new Date().toISOString();
-  return {
-    id: ro.roNo,
-    ro_no: ro.roNo,
-    job_category: "bodyshop",
-    work_type: null,
-    branch_id: ro.branchId ?? null,
-    ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
-    reg_no: ro.vehicle.registrationNo,
-    customer_name: ro.vehicle.customer.name,
-    model: ro.vehicle.model,
-    insurance_company: ro.insuranceClaim?.insuranceCompany ?? null,
-    surveyor: ro.survey?.surveyorName ?? null,
-    service_advisor: ro.serviceAdvisorName ?? ro.advisor?.name ?? null,
-    mobile_no: ro.vehicle.customer.mobile,
-    photos: null,
-    claim_intimation_date: ro.insuranceClaim?.claimIntimationDate?.toISOString().slice(0, 10) ?? null,
-    claim_no: ro.insuranceClaim?.claimNo ?? null,
-    hap_status: ro.insuranceClaim?.hapFlag === true ? "HAP" : ro.insuranceClaim?.hapFlag === false ? "N HAP" : null,
-    survey_date: ro.survey?.surveyDate?.toISOString().slice(0, 10) ?? null,
-    approval_date: ro.survey?.approvalDate?.toISOString().slice(0, 10) ?? null,
-    advisor_remark: null,
-    whatsapp_date: null,
-    tentative_labor: ro.billing?.actualLabour ?? ro.billing?.billAmount ?? null,
-    promised_date: ro.committedDeliveryDate?.toISOString().slice(0, 10) ?? null,
-    general_remark: null,
-    replace_panels: ro.panelsNewReplace != null ? String(ro.panelsNewReplace) : null,
-    dent_panels: ro.panelsDent != null ? String(ro.panelsDent) : null,
-    mrs: null,
-    mrs_date: null,
-    order_no: null,
-    order_date: null,
-    eta_date: null,
-    received_date: null,
-    status_section,
-    billing_status: null,
-    parts_status: null,
-    billed_labor_amount: null,
-    labor_discount_amount: null,
-    billed_parts_amount: null,
-    billing_no: null,
-    billing_fetched_at: null,
-    created_at: now,
-    updated_at: now,
-  };
-}
-
-function mapROToBodyshopJobBoard(ro: {
-  roNo: string;
-  branchId: string | null;
-  vehicleInDate: Date;
-  currentStatus: string;
-  serviceAdvisorName: string | null;
-  vehicle: { registrationNo: string; model: string; customer: { name: string; mobile: string } };
-  insuranceClaim?: { insuranceCompany: string | null } | null;
-}): BodyshopJob {
-  const status_section = mapCurrentStatusToSection(ro.currentStatus);
-  const now = new Date().toISOString();
-  return {
-    id: ro.roNo,
-    ro_no: ro.roNo,
-    job_category: "bodyshop",
-    work_type: null,
-    branch_id: ro.branchId ?? null,
-    ro_date: ro.vehicleInDate.toISOString().slice(0, 10),
-    reg_no: ro.vehicle.registrationNo,
-    customer_name: ro.vehicle.customer.name,
-    model: ro.vehicle.model,
-    insurance_company: ro.insuranceClaim?.insuranceCompany ?? null,
-    surveyor: null,
-    service_advisor: ro.serviceAdvisorName ?? null,
-    mobile_no: ro.vehicle.customer.mobile,
-    photos: null,
-    claim_intimation_date: null,
-    claim_no: null,
-    hap_status: null,
-    survey_date: null,
-    approval_date: null,
-    advisor_remark: null,
-    whatsapp_date: null,
-    tentative_labor: null,
-    promised_date: null,
-    general_remark: null,
-    replace_panels: null,
-    dent_panels: null,
-    mrs: null,
-    mrs_date: null,
-    order_no: null,
-    order_date: null,
-    eta_date: null,
-    received_date: null,
-    status_section,
-    billing_status: null,
-    parts_status: null,
-    billed_labor_amount: null,
-    labor_discount_amount: null,
-    billed_parts_amount: null,
-    billing_no: null,
-    billing_fetched_at: null,
-    created_at: now,
-    updated_at: now,
-  };
-}
-
-function isMissingOptionalRelationTable(error: unknown): boolean {
-  const err = error as { code?: string; meta?: { table?: string }; message?: string };
-  const table = err?.meta?.table ?? "";
-  const message = err?.message ?? "";
-  return (
-    err?.code === "P2021" &&
-    (table === "public.InsuranceClaim" ||
-      table === "public.Survey" ||
-      table === "public.Billing" ||
-      message.includes("public.InsuranceClaim") ||
-      message.includes("public.Survey") ||
-      message.includes("public.Billing"))
-  );
 }
 
 function filterJobs(

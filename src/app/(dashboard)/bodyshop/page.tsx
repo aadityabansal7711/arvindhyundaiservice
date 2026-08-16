@@ -71,6 +71,7 @@ function BodyshopDashboardPageInner() {
   const [stageViewLoading, setStageViewLoading] = useState(false);
   const [stageViewError, setStageViewError] = useState<string | null>(null);
   const [stageViewRows, setStageViewRows] = useState<StageHistoryRow[]>([]);
+  const stageViewRequestRef = useRef<string | null>(null);
   const [moveForm, setMoveForm] = useState<{
     movement_at: string;
     inputer_remark: string;
@@ -323,12 +324,6 @@ function BodyshopDashboardPageInner() {
     }
   }, [searchParams]);
 
-  // Sync search input with global header `?q=` param.
-  useEffect(() => {
-    const q = searchParams.get("q") ?? "";
-    setSearch((prev) => (prev === q ? prev : q));
-  }, [searchParams]);
-
   const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
@@ -561,6 +556,7 @@ function BodyshopDashboardPageInner() {
   };
 
   const openStageView = async (jobId: string) => {
+    stageViewRequestRef.current = jobId;
     setStageViewOpen(true);
     setStageViewLoading(true);
     setStageViewError(null);
@@ -570,16 +566,20 @@ function BodyshopDashboardPageInner() {
       const rows = await apiGet<StageHistoryRow[]>(
         `/api/bodyshop-stages?jobId=${encodeURIComponent(jobId)}`
       );
+      // A stale request resolving after a newer one must not clobber it.
+      if (stageViewRequestRef.current !== jobId) return;
       setStageViewRows(rows ?? []);
     } catch (e) {
+      if (stageViewRequestRef.current !== jobId) return;
       console.error(e);
       setStageViewError((e as Error)?.message ?? "Failed to load movement details");
     } finally {
-      setStageViewLoading(false);
+      if (stageViewRequestRef.current === jobId) setStageViewLoading(false);
     }
   };
 
   const closeStageView = () => {
+    stageViewRequestRef.current = null;
     setStageViewOpen(false);
     setStageViewLoading(false);
     setStageViewError(null);
@@ -905,28 +905,38 @@ function BodyshopDashboardPageInner() {
                                     const photos = Array.isArray(refreshed.photos)
                                       ? refreshed.photos
                                       : [];
-                                    setPhotoPreview({
-                                      jobId: job.id,
-                                      title: `RO ${refreshed.ro_no} photos`,
-                                      photos,
-                                      loading: false,
-                                      error: null,
-                                      visibleCount: 12,
-                                      canAddPhotos,
-                                      canDeletePhotos,
-                                    });
+                                    // Guard against a slower stale request landing after the
+                                    // user has already opened a different job's photo modal.
+                                    setPhotoPreview((prev) =>
+                                      prev && prev.jobId === job.id
+                                        ? {
+                                            jobId: job.id,
+                                            title: `RO ${refreshed.ro_no} photos`,
+                                            photos,
+                                            loading: false,
+                                            error: null,
+                                            visibleCount: 12,
+                                            canAddPhotos,
+                                            canDeletePhotos,
+                                          }
+                                        : prev
+                                    );
                                   } catch {
                                     // Fallback to whatever board state we currently have.
-                                    setPhotoPreview({
-                                      jobId: job.id,
-                                      title: `RO ${job.ro_no} photos`,
-                                      photos: Array.isArray(job.photos) ? job.photos : [],
-                                      loading: false,
-                                      error: "Failed to load latest photos. Showing cached photos.",
-                                      visibleCount: 12,
-                                      canAddPhotos,
-                                      canDeletePhotos,
-                                    });
+                                    setPhotoPreview((prev) =>
+                                      prev && prev.jobId === job.id
+                                        ? {
+                                            jobId: job.id,
+                                            title: `RO ${job.ro_no} photos`,
+                                            photos: Array.isArray(job.photos) ? job.photos : [],
+                                            loading: false,
+                                            error: "Failed to load latest photos. Showing cached photos.",
+                                            visibleCount: 12,
+                                            canAddPhotos,
+                                            canDeletePhotos,
+                                          }
+                                        : prev
+                                    );
                                   }
                                 })();
                               }}
