@@ -8,6 +8,7 @@ import {
   verifyOtp,
 } from "./gdms-client";
 import { destroySession, getSession } from "./session-store";
+import { GDMS_BASE_URL, GDMS_LOGIN_PAGE_PATH } from "./config";
 
 const PORT = Number(process.env.PORT) || 8080;
 const SERVICE_TOKEN = process.env.GDMS_SERVICE_TOKEN;
@@ -32,6 +33,33 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return;
   }
   next();
+});
+
+/**
+ * Diagnostic only — does a plain HTTP fetch (no Chromium) to GDMS's login
+ * page and reports how long it took. Lets us tell apart "this host's network
+ * can't reach GDMS at all" from "something about Chromium's connection
+ * specifically is the problem" without needing to touch infrastructure
+ * (static IP, on-prem hosting, etc.) to find out which one it is.
+ */
+app.get("/debug/reachability", async (_req: Request, res: Response) => {
+  const url = `${GDMS_BASE_URL}${GDMS_LOGIN_PAGE_PATH}`;
+  const start = Date.now();
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    res.json({ ok: true, url, status: response.status, ms: Date.now() - start });
+  } catch (err) {
+    res.json({
+      ok: false,
+      url,
+      error: err instanceof Error ? err.message : String(err),
+      ms: Date.now() - start,
+    });
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 });
 
 app.post("/login/start", async (req: Request, res: Response) => {
