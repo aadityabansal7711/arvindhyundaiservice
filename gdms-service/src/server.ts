@@ -35,6 +35,13 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+/** Node's fetch wraps the real low-level failure (ETIMEDOUT, ECONNRESET, ...) in Error.cause. */
+function extractCauseDetails(cause: unknown): Record<string, unknown> | null {
+  if (!cause || typeof cause !== "object") return null;
+  const c = cause as Record<string, unknown>;
+  return { code: c.code, errno: c.errno, syscall: c.syscall, address: c.address, port: c.port, message: c.message };
+}
+
 /**
  * Diagnostic only — does a plain HTTP fetch (no Chromium) to GDMS's login
  * page and reports how long it took. Lets us tell apart "this host's network
@@ -51,10 +58,12 @@ app.get("/debug/reachability", async (_req: Request, res: Response) => {
     const response = await fetch(url, { signal: controller.signal });
     res.json({ ok: true, url, status: response.status, ms: Date.now() - start });
   } catch (err) {
+    console.error("[gdms-service] /debug/reachability failed:", err);
     res.json({
       ok: false,
       url,
       error: err instanceof Error ? err.message : String(err),
+      cause: extractCauseDetails(err instanceof Error ? err.cause : undefined),
       ms: Date.now() - start,
     });
   } finally {
