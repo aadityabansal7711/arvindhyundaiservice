@@ -8,10 +8,6 @@ import {
   verifyOtp,
 } from "./gdms-client";
 import { GdmsProxyError } from "./proxy-config";
-// TEMPORARY — remove this import and the /debug/proxy-check route below
-// (and delete proxy-check-diagnostic.ts) once the first real end-to-end
-// GDMS login/import succeeds. See that file's own header comment.
-import { runProxyCheckDiagnostic } from "./proxy-check-diagnostic";
 import { destroySession, getSession } from "./session-store";
 import { GDMS_BASE_URL, GDMS_LOGIN_PAGE_PATH } from "./config";
 
@@ -74,12 +70,6 @@ app.get("/debug/reachability", async (_req: Request, res: Response) => {
   } finally {
     clearTimeout(timeoutHandle);
   }
-});
-
-// TEMPORARY — see the import comment above for removal instructions.
-app.get("/debug/proxy-check", async (_req: Request, res: Response) => {
-  const result = await runProxyCheckDiagnostic();
-  res.json(result);
 });
 
 app.post("/login/start", async (req: Request, res: Response) => {
