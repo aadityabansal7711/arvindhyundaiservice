@@ -1,4 +1,13 @@
+import crypto from "node:crypto";
 import { chromium } from "playwright";
+import {
+  buildGdmsProxyConfig,
+  GdmsProxyError,
+  isProxyRelatedError,
+  logProxyUsage,
+  verifyProxyEgressConsistency,
+  wrapProxyError,
+} from "./proxy-config";
 import {
   GDMS_BASE_URL,
   GDMS_BILLING_DETAIL_PATH,
@@ -77,10 +86,25 @@ export async function startLogin(params: {
   gdmsUserId: string;
   gdmsPassword: string;
 }): Promise<string> {
+  // Generated up front (not inside createSession, as before) because the
+  // Bright Data proxy session id must be baked into the proxy username
+  // before the browser even launches — this same id becomes the session
+  // store's id too, so "one GDMS session" and "one sticky proxy session"
+  // are always the same lifetime by construction.
+  const gdmsSessionId = crypto.randomUUID();
+  const proxyConfig = buildGdmsProxyConfig(gdmsSessionId);
+  if (proxyConfig) logProxyUsage(gdmsSessionId, proxyConfig);
+
   let browser: import("playwright").Browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: true,
+      ...(proxyConfig
+        ? { proxy: { server: proxyConfig.server, username: proxyConfig.username, password: proxyConfig.password } }
+        : {}),
+    });
   } catch (err) {
+    if (isProxyRelatedError(err)) throw wrapProxyError(err, "browser launch");
     throw new GdmsLoginError(
       err instanceof Error
         ? `Headless browser failed to start: ${err.message}`
@@ -88,10 +112,20 @@ export async function startLogin(params: {
     );
   }
 
-  const context = await browser.newContext();
+  // Proxy set at both launch AND context level — Playwright's context.request
+  // (used by fetchRepairOrders/fetchRepairBilling) is verified below to
+  // actually honor it; this is belt-and-braces, not a substitute for that check.
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: false,
+    ...(proxyConfig
+      ? { proxy: { server: proxyConfig.server, username: proxyConfig.username, password: proxyConfig.password } }
+      : {}),
+  });
   const page = await context.newPage();
 
   try {
+    await verifyProxyEgressConsistency(page, context, "before-send-otp");
+
     console.log(`[GDMS] Opening login page for branch ${params.branchId}...`);
     // "commit" resolves as soon as the response headers arrive, rather than
     // waiting for the full document + its scripts to finish loading — GDMS's
@@ -127,6 +161,7 @@ export async function startLogin(params: {
     }
 
     const sessionId = await createSession({
+      id: gdmsSessionId,
       branchId: params.branchId,
       userId: params.appUserId,
       browser,
@@ -136,7 +171,8 @@ export async function startLogin(params: {
     return sessionId;
   } catch (err) {
     await browser.close().catch(() => {});
-    if (err instanceof GdmsLoginError) throw err;
+    if (err instanceof GdmsLoginError || err instanceof GdmsProxyError) throw err;
+    if (isProxyRelatedError(err)) throw wrapProxyError(err, "login page navigation");
     throw new GdmsLoginError(
       err instanceof Error ? err.message : "Failed to reach GDMS login page"
     );
@@ -148,7 +184,9 @@ export async function verifyOtp(sessionId: string, otp: string): Promise<void> {
   if (!session) {
     throw new GdmsOtpError("This GDMS session has expired. Please start again.");
   }
-  const { page } = session;
+  const { page, context } = session;
+
+  await verifyProxyEgressConsistency(page, context, "before-verify-otp");
 
   await page.fill(GDMS_SELECTORS.otpEnter, otp);
 
@@ -193,6 +231,8 @@ export async function fetchRepairOrders(
     throw new GdmsOtpError("This GDMS session has not completed OTP verification yet.");
   }
 
+  await verifyProxyEgressConsistency(session.page, session.context, "before-fetch-ros");
+
   const sRoStrtDate = toGdmsRangeTimestamp(dateFrom, -1);
   const sRoFnshDate = toGdmsRangeTimestamp(dateTo, 0);
 
@@ -204,36 +244,42 @@ export async function fetchRepairOrders(
     const firstIndex = (pageIndex - 1) * GDMS_RO_PAGE_SIZE;
     const lastIndex = firstIndex + GDMS_RO_PAGE_SIZE;
 
-    const response = await session.context.request.post(`${GDMS_BASE_URL}${GDMS_RO_LIST_PATH}`, {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-        "X-AjaxRequest": "1",
-      },
-      data: {
-        recordCountPerPage: GDMS_RO_PAGE_SIZE,
-        pageIndex,
-        firstIndex,
-        lastIndex,
-        sRoStrtDate,
-        sRoFnshDate,
-        sModelCode: "",
-        sWorkType: "",
-        sRoStat: "",
-        sSaleStrtDate: null,
-        sSaleFnshDate: null,
-        sUsedCarYn: "",
-        sSaEmpNo: "",
-        sDssYn: "",
-        sRoNo: "",
-        sRgstnNo: "",
-        vhclUseType: "",
-        isNightService: "",
-        sVinFullFlag: "",
-        sVinNo: "",
-        sScrnId: "RO",
-      },
-    });
+    let response: Awaited<ReturnType<typeof session.context.request.post>>;
+    try {
+      response = await session.context.request.post(`${GDMS_BASE_URL}${GDMS_RO_LIST_PATH}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-AjaxRequest": "1",
+        },
+        data: {
+          recordCountPerPage: GDMS_RO_PAGE_SIZE,
+          pageIndex,
+          firstIndex,
+          lastIndex,
+          sRoStrtDate,
+          sRoFnshDate,
+          sModelCode: "",
+          sWorkType: "",
+          sRoStat: "",
+          sSaleStrtDate: null,
+          sSaleFnshDate: null,
+          sUsedCarYn: "",
+          sSaEmpNo: "",
+          sDssYn: "",
+          sRoNo: "",
+          sRgstnNo: "",
+          vhclUseType: "",
+          isNightService: "",
+          sVinFullFlag: "",
+          sVinNo: "",
+          sScrnId: "RO",
+        },
+      });
+    } catch (err) {
+      if (isProxyRelatedError(err)) throw wrapProxyError(err, "RO list request");
+      throw err;
+    }
 
     if (!response.ok()) {
       throw new Error(`GDMS RO list request failed: ${response.status()} ${response.statusText()}`);
@@ -267,11 +313,17 @@ async function fetchAllBillingPages<T>(
     const firstIndex = (pageIndex - 1) * GDMS_BILLING_PAGE_SIZE;
     const lastIndex = firstIndex + GDMS_BILLING_PAGE_SIZE;
 
-    const response = await session.context.request.post(`${GDMS_BASE_URL}${path}`, {
-      headers: BILLING_AJAX_HEADERS,
-      data: { recordCountPerPage: GDMS_BILLING_PAGE_SIZE, pageIndex, firstIndex, lastIndex, ...baseParams },
-      timeout: GDMS_NAV_TIMEOUT_MS,
-    });
+    let response: Awaited<ReturnType<typeof session.context.request.post>>;
+    try {
+      response = await session.context.request.post(`${GDMS_BASE_URL}${path}`, {
+        headers: BILLING_AJAX_HEADERS,
+        data: { recordCountPerPage: GDMS_BILLING_PAGE_SIZE, pageIndex, firstIndex, lastIndex, ...baseParams },
+        timeout: GDMS_NAV_TIMEOUT_MS,
+      });
+    } catch (err) {
+      if (isProxyRelatedError(err)) throw wrapProxyError(err, `billing request to ${path}`);
+      throw err;
+    }
 
     if (!response.ok()) {
       throw new Error(`GDMS request to ${path} failed: ${response.status()} ${response.statusText()}`);

@@ -7,6 +7,7 @@ import {
   startLogin,
   verifyOtp,
 } from "./gdms-client";
+import { GdmsProxyError } from "./proxy-config";
 import { destroySession, getSession } from "./session-store";
 import { GDMS_BASE_URL, GDMS_LOGIN_PAGE_PATH } from "./config";
 
@@ -91,11 +92,15 @@ app.post("/login/start", async (req: Request, res: Response) => {
     const sessionId = await startLogin({ branchId, appUserId, gdmsUserId, gdmsPassword });
     res.json({ sessionId });
   } catch (err) {
-    if (!(err instanceof GdmsLoginError)) {
+    // GdmsProxyError already logged its sanitized cause server-side (see
+    // wrapProxyError) and carries a clean, user-safe message — don't log again.
+    if (!(err instanceof GdmsLoginError) && !(err instanceof GdmsProxyError)) {
       console.error("[gdms-service] login/start failed:", err);
     }
     const message =
-      err instanceof GdmsLoginError ? err.message : "Could not reach GDMS. Please try again in a moment.";
+      err instanceof GdmsLoginError || err instanceof GdmsProxyError
+        ? err.message
+        : "Could not reach GDMS. Please try again in a moment.";
     res.status(502).json({ error: message });
   }
 });
@@ -121,6 +126,11 @@ app.post("/login/verify", async (req: Request, res: Response) => {
     await verifyOtp(sessionId, otp);
     res.json({ ok: true });
   } catch (err) {
+    if (err instanceof GdmsProxyError) {
+      // Not a bad-OTP case — the network path itself failed, so 502 (not 400) and no logging here (already done in wrapProxyError).
+      res.status(502).json({ error: err.message });
+      return;
+    }
     const message = err instanceof GdmsOtpError ? err.message : "OTP verification failed. Please try again.";
     res.status(400).json({ error: message });
   }
@@ -138,7 +148,8 @@ app.post("/fetch", async (req: Request, res: Response) => {
     rows = await fetchRepairOrders(sessionId, dateFrom, dateTo);
   } catch (err) {
     await destroySession(sessionId);
-    const message = err instanceof GdmsOtpError ? err.message : "Failed to fetch ROs from GDMS.";
+    const message =
+      err instanceof GdmsOtpError || err instanceof GdmsProxyError ? err.message : "Failed to fetch ROs from GDMS.";
     res.status(502).json({ error: message });
     return;
   }
