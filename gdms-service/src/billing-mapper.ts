@@ -1,13 +1,5 @@
 /** Pure mapping/summing helpers for GDMS's Repair Billing screen — no I/O, safe to unit test directly. */
 
-/** One row from `selectRepairBillingList.json`'s `data[]` — gives the ROs billed in a date range. */
-export type GdmsBillingListRow = {
-  roNo: string;
-  bilngNo: string | null;
-  billDate: string | null;
-  [key: string]: unknown;
-};
-
 /** One row from `selectRepairBillingLabr.json`'s `data[]`. */
 export type GdmsBillingLabourRow = {
   issTypeCode: string | null;
@@ -32,23 +24,6 @@ export type BillingTotals = {
   /** Pre-tax parts amount summed across all issue-type lines (no discount applies). */
   partsAmount: number;
 };
-
-/**
- * One RO can appear more than once in the Repair Billing list (re-bill,
- * cancellation, etc.) — GDMS returns the most recent entry first (by
- * `rnum`/`billDate`), so the first occurrence of each roNo wins.
- */
-export function dedupeBillingListByRoNo(rows: GdmsBillingListRow[]): GdmsBillingListRow[] {
-  const seen = new Set<string>();
-  const result: GdmsBillingListRow[] = [];
-  for (const row of rows) {
-    const roNo = row.roNo?.trim();
-    if (!roNo || seen.has(roNo)) continue;
-    seen.add(roNo);
-    result.push(row);
-  }
-  return result;
-}
 
 /** Sums the pre-tax "Amount" column and the "Discount Amount" column across a Labour tab's rows. */
 export function sumLabourBilling(rows: GdmsBillingLabourRow[]): { amount: number; discount: number } {

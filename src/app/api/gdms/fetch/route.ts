@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GdmsServiceError, fetchGdmsRos, getGdmsSessionMeta } from "@/lib/gdms/service-client";
-import { applyBillingToBodyshopJobs, upsertBodyshopJobsFromGdms } from "@/lib/gdms/upsert";
+import {
+  applyBillingToBodyshopJobs,
+  getOpenRoNumbersForBranch,
+  upsertBodyshopJobsFromGdms,
+} from "@/lib/gdms/upsert";
 import type { GdmsRoRow } from "@/lib/gdms/mapper";
 import { getBranchNameMap } from "@/lib/branch-list";
 import { clearBodyshopJobsCache } from "@/lib/bodyshop-jobs-cache";
@@ -75,12 +79,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Every RO already open on this branch's board — sent along so gdms-service
+  // checks Repair Billing for all of them, not just ones whose bill date
+  // happens to fall inside dateFrom/dateTo (which only scopes the RO list).
+  // A lookup failure here shouldn't block the fetch, just narrow billing.
+  const openRoNumbers = await getOpenRoNumbersForBranch(branchId).catch(() => [] as string[]);
+
   // The gdms-service call does the RO-list fetch, the Repair Billing fetch
   // (isolated from RO-list failure on its side), and session teardown all in
   // one round trip — see gdms-service/src/server.ts's POST /fetch.
   let fetchResult: Awaited<ReturnType<typeof fetchGdmsRos>>;
   try {
-    fetchResult = await fetchGdmsRos(sessionId, dateFrom, dateTo);
+    fetchResult = await fetchGdmsRos(sessionId, dateFrom, dateTo, openRoNumbers);
   } catch (err) {
     const message = err instanceof GdmsServiceError ? err.message : "Failed to fetch ROs from GDMS.";
     const status = err instanceof GdmsServiceError ? err.status : 502;

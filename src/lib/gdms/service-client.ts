@@ -104,6 +104,18 @@ export type GdmsFetchResult = {
   billingFetchFailed: boolean;
 };
 
-export function fetchGdmsRos(sessionId: string, dateFrom: string, dateTo: string): Promise<GdmsFetchResult> {
-  return callGdmsService("/fetch", { sessionId, dateFrom, dateTo });
+/**
+ * `openRoNumbers` — every currently-open RO (raw, unprefixed) this branch
+ * already has in the DB — is unioned server-side with whatever this RO-list
+ * fetch itself returns, so Repair Billing gets checked for all of them
+ * regardless of whether their bill date falls inside `dateFrom`/`dateTo`
+ * (which only scopes the RO list, not billing).
+ */
+export function fetchGdmsRos(
+  sessionId: string,
+  dateFrom: string,
+  dateTo: string,
+  openRoNumbers: string[]
+): Promise<GdmsFetchResult> {
+  return callGdmsService("/fetch", { sessionId, dateFrom, dateTo, openRoNumbers });
 }

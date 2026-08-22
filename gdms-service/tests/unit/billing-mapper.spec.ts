@@ -1,12 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  buildBillingTotals,
-  dedupeBillingListByRoNo,
-  sumLabourBilling,
-  sumPartsBilling,
-} from "../../src/billing-mapper";
-import type { GdmsBillingListRow } from "../../src/billing-mapper";
+import { buildBillingTotals, sumLabourBilling, sumPartsBilling } from "../../src/billing-mapper";
 
 test("sumLabourBilling sums the pre-tax amount and discount across issue-type lines", () => {
   const totals = sumLabourBilling([
@@ -28,24 +22,6 @@ test("sumPartsBilling sums the pre-tax amount across issue-type lines, ignoring 
     { issTypeCode: "B", partAmt: 570.34 },
   ]);
   assert.equal(total, 7565.26);
-});
-
-test("dedupeBillingListByRoNo keeps only the first (most recent) occurrence of each RO", () => {
-  const rows: GdmsBillingListRow[] = [
-    { roNo: "R202600500", bilngNo: "B2", billDate: "2026-08-14" },
-    { roNo: "R202600496", bilngNo: "B1", billDate: "2026-08-13" },
-    { roNo: "R202600500", bilngNo: "B0", billDate: "2026-08-10" }, // older re-bill of the same RO
-  ];
-  const deduped = dedupeBillingListByRoNo(rows);
-  assert.deepEqual(
-    deduped.map((r) => r.bilngNo),
-    ["B2", "B1"]
-  );
-});
-
-test("dedupeBillingListByRoNo skips rows with a blank RO number", () => {
-  const rows: GdmsBillingListRow[] = [{ roNo: "  ", bilngNo: "B1", billDate: "2026-08-13" }];
-  assert.deepEqual(dedupeBillingListByRoNo(rows), []);
 });
 
 test("buildBillingTotals nets labour amount against discount, leaves parts undiscounted", () => {

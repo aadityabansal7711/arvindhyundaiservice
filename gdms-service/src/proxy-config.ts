@@ -95,7 +95,7 @@ function hashIp(ip: string): string {
 
 /**
  * Confirms `page` (browser-driven navigation) and `context.request` (the
- * Node-side API client `fetchRepairOrders`/`fetchRepairBilling` actually use)
+ * Node-side API client `fetchRepairOrders`/`fetchRepairBillingForRoNumbers` actually use)
  * are exiting through the SAME proxy IP — never assumed, only ever asserted
  * after checking. Only runs when GDMS_PROXY_DEBUG=true; a no-op otherwise, so
  * normal user sessions never pay this extra round-trip or depend on a

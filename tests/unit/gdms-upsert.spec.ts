@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildInsertPayload, decideReclassification } from "@/lib/gdms/upsert";
+import { buildInsertPayload, decideReclassification, resolveWorkTypePatch } from "@/lib/gdms/upsert";
 import type { GdmsRoRow } from "@/lib/gdms/mapper";
 
 const sampleRow: GdmsRoRow = {
@@ -112,29 +112,50 @@ test("decideReclassification: category already matches → no-op (null)", () => 
   );
 });
 
-test("decideReclassification: bodyshop → service resets an in-progress bodyshop stage to Job Open", () => {
+test("decideReclassification: bodyshop → service moves the board but preserves the in-progress stage", () => {
   const patch = decideReclassification({ job_category: "bodyshop", status_section: "Painting" }, "service");
-  assert.deepEqual(patch, { job_category: "service", status_section: "Job Open" });
+  assert.deepEqual(patch, { job_category: "service" });
 });
 
-test("decideReclassification: bodyshop → service keeps Delivered as Delivered", () => {
+test("decideReclassification: bodyshop → service preserves Delivered too", () => {
   const patch = decideReclassification({ job_category: "bodyshop", status_section: "Delivered" }, "service");
-  assert.deepEqual(patch, { job_category: "service", status_section: "Delivered" });
+  assert.deepEqual(patch, { job_category: "service" });
 });
 
-test("decideReclassification: service → bodyshop (reverse direction) resets to Document Pending", () => {
+test("decideReclassification: service → bodyshop (reverse direction) preserves the current stage", () => {
   const patch = decideReclassification({ job_category: "service", status_section: "In Progress" }, "bodyshop");
-  assert.deepEqual(patch, { job_category: "bodyshop", status_section: "Document Pending" });
+  assert.deepEqual(patch, { job_category: "bodyshop" });
 });
 
-test("decideReclassification: service → bodyshop keeps Delivered as Delivered", () => {
+test("decideReclassification: service → bodyshop preserves Delivered too", () => {
   const patch = decideReclassification({ job_category: "service", status_section: "Delivered" }, "bodyshop");
-  assert.deepEqual(patch, { job_category: "bodyshop", status_section: "Delivered" });
+  assert.deepEqual(patch, { job_category: "bodyshop" });
 });
 
 test("decideReclassification: treats a null/missing existing job_category as bodyshop", () => {
   // Rows created before job_category existed have it defaulted to 'bodyshop' by
   // the DB column default, but this guards the in-memory decision logic too.
   const patch = decideReclassification({ job_category: null, status_section: "Document Pending" }, "service");
-  assert.deepEqual(patch, { job_category: "service", status_section: "Job Open" });
+  assert.deepEqual(patch, { job_category: "service" });
+});
+
+test("resolveWorkTypePatch: a blank workType on this fetch preserves the existing value (returns null)", () => {
+  assert.equal(resolveWorkTypePatch(null), null);
+  assert.equal(resolveWorkTypePatch(undefined), null);
+  assert.equal(resolveWorkTypePatch(""), null);
+  assert.equal(resolveWorkTypePatch("   "), null);
+});
+
+test("resolveWorkTypePatch: a non-blank workType still updates the existing value", () => {
+  const patch = resolveWorkTypePatch("CR");
+  assert.deepEqual(patch, { work_type: "CR" });
+});
+
+test("resolveWorkTypePatch: merged into an update the way upsertOne does, a blank incoming value leaves an existing 'AR' as 'AR'", () => {
+  const existingRow = { work_type: "AR" };
+  const merged = { ...existingRow, ...(resolveWorkTypePatch(null) ?? {}) };
+  assert.equal(merged.work_type, "AR");
+
+  const mergedEmptyString = { ...existingRow, ...(resolveWorkTypePatch("") ?? {}) };
+  assert.equal(mergedEmptyString.work_type, "AR");
 });

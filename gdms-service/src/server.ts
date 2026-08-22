@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import {
   GdmsLoginError,
   GdmsOtpError,
-  fetchRepairBilling,
+  fetchRepairBillingForRoNumbers,
   fetchRepairOrders,
   startLogin,
   verifyOtp,
@@ -137,11 +137,14 @@ app.post("/login/verify", async (req: Request, res: Response) => {
 });
 
 app.post("/fetch", async (req: Request, res: Response) => {
-  const { sessionId, dateFrom, dateTo } = req.body ?? {};
+  const { sessionId, dateFrom, dateTo, openRoNumbers } = req.body ?? {};
   if (typeof sessionId !== "string" || !sessionId || typeof dateFrom !== "string" || typeof dateTo !== "string") {
     res.status(400).json({ error: "sessionId, dateFrom and dateTo are required" });
     return;
   }
+  const callerOpenRoNumbers: string[] = Array.isArray(openRoNumbers)
+    ? openRoNumbers.filter((v): v is string => typeof v === "string")
+    : [];
 
   let rows: Awaited<ReturnType<typeof fetchRepairOrders>>;
   try {
@@ -154,14 +157,20 @@ app.post("/fetch", async (req: Request, res: Response) => {
     return;
   }
 
-  // Repair Billing is a separate GDMS screen from the RO list above — its
-  // own failure must not lose the RO import that already succeeded, so it's
-  // isolated in its own try/catch rather than the RO-list one.
-  let billingTotals: Awaited<ReturnType<typeof fetchRepairBilling>>["totals"] = [];
-  let billingFetchErrors: Awaited<ReturnType<typeof fetchRepairBilling>>["errors"] = [];
+  // Repair Billing is looked up by RO number directly, not by GDMS's own
+  // date-scoped Repair Billing list — an RO's actual bill date routinely
+  // falls outside whatever date range the caller picked for the RO list, so
+  // billing must be checked for every RO the caller currently cares about
+  // (its already-open ROs, unioned with whatever this RO-list fetch just
+  // returned) rather than only ones GDMS happens to say were billed within
+  // that same window. Its own failure must not lose the RO import that
+  // already succeeded, so it's isolated in its own try/catch.
+  const roNumbersToBill = Array.from(new Set([...callerOpenRoNumbers, ...rows.map((r) => r.roNo)]));
+  let billingTotals: Awaited<ReturnType<typeof fetchRepairBillingForRoNumbers>>["totals"] = [];
+  let billingFetchErrors: Awaited<ReturnType<typeof fetchRepairBillingForRoNumbers>>["errors"] = [];
   let billingFetchFailed = false;
   try {
-    const billing = await fetchRepairBilling(sessionId, dateFrom, dateTo);
+    const billing = await fetchRepairBillingForRoNumbers(sessionId, roNumbersToBill);
     billingTotals = billing.totals;
     billingFetchErrors = billing.errors;
   } catch (err) {

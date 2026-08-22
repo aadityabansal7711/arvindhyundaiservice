@@ -16,6 +16,7 @@ import {
 import { apiGet, apiPost, apiDelete, apiPatch } from "@/lib/api";
 import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
 import { GdmsFetchModal } from "@/components/bodyshop/gdms-fetch-modal";
+import { BranchFilter } from "@/components/bodyshop/branch-filter";
 import type { BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
 import {
@@ -60,6 +61,7 @@ function BodyshopDashboardPageInner() {
   const [jobs, setJobs] = useState<BodyshopJobWithMeta[]>([]);
   const [search, setSearch] = useState("");
   const [activeStage, setActiveStage] = useState<StatusSection | "All">("All");
+  const [activeBranch, setActiveBranch] = useState<string>("All");
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [moveJob, setMoveJob] = useState<BodyshopJobWithMeta | null>(null);
@@ -165,6 +167,9 @@ function BodyshopDashboardPageInner() {
         );
       } catch (err) {
         lastError = err instanceof Error ? err : new Error("Failed to load photos");
+        // Rate-limited: retrying within the same short window can't succeed
+        // and just multiplies the noise, so give up immediately.
+        if (lastError.message.startsWith("Too many requests")) break;
         if (attempt < 3) {
           await wait(300 * attempt);
         }
@@ -373,19 +378,21 @@ function BodyshopDashboardPageInner() {
       {} as Record<StatusSection, number>
     );
     // This page only ever holds bodyshop-category jobs (fetched without a
-    // category param, which defaults server-side to "bodyshop").
-    for (const j of jobs) stageCounts[j.status_section as StatusSection] += 1;
+    // category param, which defaults server-side to "bodyshop"). Counts
+    // reflect the branch filter so the sidebar matches what's on screen.
+    const branchScoped =
+      activeBranch === "All" ? jobs : jobs.filter((j) => j.branch_id === activeBranch);
+    for (const j of branchScoped) stageCounts[j.status_section as StatusSection] += 1;
 
-    const filtered =
-      activeStage === "All"
-        ? jobs
-        : jobs.filter((j) => j.status_section === activeStage);
+    const filtered = branchScoped.filter(
+      (j) => activeStage === "All" || j.status_section === activeStage
+    );
 
     return {
       stageCounts,
       filtered,
     };
-  }, [jobs, activeStage]);
+  }, [jobs, activeStage, activeBranch]);
 
   const branchNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -734,8 +741,8 @@ function BodyshopDashboardPageInner() {
         <div className="space-y-4">
           <section className="space-y-3">
             <div className="panel-surface p-3 sm:p-4 rounded-2xl">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     value={search}
@@ -744,6 +751,7 @@ function BodyshopDashboardPageInner() {
                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
                   />
                 </div>
+                <BranchFilter branches={branches} value={activeBranch} onChange={setActiveBranch} />
                 {canFetchGdms && (
                   <button
                     type="button"

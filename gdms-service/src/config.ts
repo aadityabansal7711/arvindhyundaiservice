@@ -10,16 +10,16 @@ export const GDMS_LOGOUT_PATH = "/cmm/cmmi/selectLogoutAction.dms";
 
 /**
  * GDMS's "Repair Billing" section — a separate screen from the Repair Order
- * List above. Its list gives the RO numbers billed in a date range; its
- * detail/Labour/Parts endpoints give the actual billing line items for one
- * RO. Paths captured from a live HAR export.
+ * List above. Its detail/Labour/Parts endpoints give the actual billing line
+ * items for one RO, looked up directly by RO number (not via GDMS's own
+ * Repair Billing list, which is scoped to a bill-date range). Paths captured
+ * from a live HAR export.
  */
-export const GDMS_BILLING_LIST_PATH = "/ser/serd/selectRepairBillingList.json";
 export const GDMS_BILLING_DETAIL_PATH = "/ser/serd/selectRepairBillingDetail.json";
 export const GDMS_BILLING_LABOUR_PATH = "/ser/serd/selectRepairBillingLabr.json";
 export const GDMS_BILLING_PART_PATH = "/ser/serd/selectRepairBillingPart.json";
 export const GDMS_BILLING_PAGE_SIZE = 50;
-/** Safety cap on how many billed ROs one fetch will pull Labour/Parts detail for. */
+/** Safety cap on how many ROs one fetch will pull Labour/Parts billing detail for. */
 export const GDMS_BILLING_MAX_ROS = 300;
 
 /** Real element IDs on the GDMS login page, captured from a live HAR export. */

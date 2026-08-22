@@ -8,6 +8,7 @@ import { Search, X } from "lucide-react";
 
 import { apiDelete, apiGet, apiPatch } from "@/lib/api";
 import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop/photo-preview-modal";
+import { BranchFilter } from "@/components/bodyshop/branch-filter";
 import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
 import { getWorkTypeLabel } from "@/lib/gdms/mapper";
 
@@ -38,6 +39,7 @@ function DeliveredPageInner() {
   const [jobs, setJobs] = useState<BodyshopJobWithMeta[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [search, setSearch] = useState("");
+  const [activeBranch, setActiveBranch] = useState<string>("All");
   const [isLoading, setIsLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didFetchOnceRef = useRef(false);
@@ -61,6 +63,9 @@ function DeliveredPageInner() {
         );
       } catch (err) {
         lastError = err instanceof Error ? err : new Error("Failed to load photos");
+        // Rate-limited: retrying within the same short window can't succeed
+        // and just multiplies the noise, so give up immediately.
+        if (lastError.message.startsWith("Too many requests")) break;
         if (attempt < 3) {
           await wait(300 * attempt);
         }
@@ -149,9 +154,10 @@ function DeliveredPageInner() {
   }, [session, status, isAdmin]);
 
   const derived = useMemo(() => {
-    const total = jobs.length;
-    return { total };
-  }, [jobs]);
+    const filtered =
+      activeBranch === "All" ? jobs : jobs.filter((j) => j.branch_id === activeBranch);
+    return { filtered, total: filtered.length };
+  }, [jobs, activeBranch]);
 
   const branchNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -241,8 +247,8 @@ function DeliveredPageInner() {
       </div>
 
       <section className="space-y-3">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 md:items-center">
-          <div className="relative flex-1">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:flex-wrap gap-3 md:items-center">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               value={search}
@@ -251,6 +257,7 @@ function DeliveredPageInner() {
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all"
             />
           </div>
+          <BranchFilter branches={branches} value={activeBranch} onChange={setActiveBranch} />
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -263,7 +270,7 @@ function DeliveredPageInner() {
             <div className="p-8 text-center text-slate-500 text-sm">
               Loading...
             </div>
-          ) : jobs.length === 0 ? (
+          ) : derived.filtered.length === 0 ? (
             <div className="p-8 text-center text-slate-500 text-sm">
               No delivered records found.
             </div>
@@ -317,7 +324,7 @@ function DeliveredPageInner() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {jobs.map((job) => (
+                  {derived.filtered.map((job) => (
                     <tr key={job.id} className="hover:bg-slate-50/50">
                       <td
                         className="px-5 py-3 text-sm font-semibold text-slate-900 cursor-pointer"

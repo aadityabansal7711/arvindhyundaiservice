@@ -12,7 +12,6 @@ import {
   GDMS_BASE_URL,
   GDMS_BILLING_DETAIL_PATH,
   GDMS_BILLING_LABOUR_PATH,
-  GDMS_BILLING_LIST_PATH,
   GDMS_BILLING_MAX_ROS,
   GDMS_BILLING_PAGE_SIZE,
   GDMS_BILLING_PART_PATH,
@@ -31,10 +30,8 @@ import { createSession, destroySession, getSession, markAuthenticated } from "./
 import type { GdmsPendingSession } from "./session-store";
 import {
   buildBillingTotals,
-  dedupeBillingListByRoNo,
   type BillingTotals,
   type GdmsBillingLabourRow,
-  type GdmsBillingListRow,
   type GdmsBillingPartRow,
 } from "./billing-mapper";
 
@@ -68,6 +65,8 @@ const BILLING_AJAX_HEADERS = {
 
 export class GdmsLoginError extends Error {}
 export class GdmsOtpError extends Error {}
+/** GDMS genuinely has no Repair Billing detail for this RO yet (not billed) — not a failure. */
+export class GdmsBillingNotFoundError extends Error {}
 
 async function readErrorBannerText(page: import("playwright").Page): Promise<string | null> {
   try {
@@ -113,7 +112,7 @@ export async function startLogin(params: {
   }
 
   // Proxy set at both launch AND context level — Playwright's context.request
-  // (used by fetchRepairOrders/fetchRepairBilling) is verified below to
+  // (used by fetchRepairOrders/fetchRepairBillingForRoNumbers) is verified below to
   // actually honor it; this is belt-and-braces, not a substitute for that check.
   const context = await browser.newContext({
     ignoreHTTPSErrors: false,
@@ -295,11 +294,6 @@ export async function fetchRepairOrders(
   return allRows;
 }
 
-/** GDMS's Repair Billing list wants a plain "YYYYMMDD" date, unlike the RO list's IST-midnight timestamps. */
-function toBillDateParam(dateStr: string): string {
-  return dateStr.replace(/-/g, "");
-}
-
 async function fetchAllBillingPages<T>(
   session: GdmsPendingSession,
   path: string,
@@ -365,7 +359,7 @@ async function fetchBillingDetailForRo(
   };
   const detail = detailJson?.detail;
   if (!detail) {
-    throw new Error(`GDMS returned no billing detail for RO ${roNo}`);
+    throw new GdmsBillingNotFoundError(`GDMS returned no billing detail for RO ${roNo}`);
   }
 
   const [labourRows, partRows] = await Promise.all([
@@ -391,19 +385,25 @@ async function fetchBillingDetailForRo(
 }
 
 /**
- * Fetches labour/parts billing totals for every RO billed in a date range,
- * via GDMS's Repair Billing section (a different screen from the RO List
- * above — its list only returns ROs that have actually been billed). Does
- * NOT destroy the session; same contract as `fetchRepairOrders`.
+ * Fetches labour/parts billing totals for an explicit list of RO numbers, via
+ * GDMS's Repair Billing detail screen (a different screen from the RO List
+ * above). Does NOT destroy the session; same contract as `fetchRepairOrders`.
  *
- * Per-RO failures (a bad detail response, a network blip) are collected in
- * `errors` rather than aborting the whole batch, since one bad RO shouldn't
- * lose billing data for the rest.
+ * Deliberately driven by the caller's RO numbers rather than GDMS's own
+ * Repair Billing *list* (which is scoped to a bill-date range): a bodyshop
+ * repair routinely gets billed weeks after its RO was opened, so filtering
+ * billing lookups by the same date range used for the RO list caused
+ * already-open ROs to never have their Labour/Parts amounts backfilled. The
+ * caller is expected to pass every currently-open RO it cares about.
+ *
+ * An RO simply not billed yet is expected and skipped silently — it's not a
+ * failure. Other per-RO failures (a bad detail response, a network blip) are
+ * collected in `errors` rather than aborting the whole batch, since one bad
+ * RO shouldn't lose billing data for the rest.
  */
-export async function fetchRepairBilling(
+export async function fetchRepairBillingForRoNumbers(
   sessionId: string,
-  dateFrom: string,
-  dateTo: string
+  roNumbers: string[]
 ): Promise<{ totals: BillingTotals[]; errors: { roNo: string; message: string }[] }> {
   const session = getSession(sessionId);
   if (!session) {
@@ -413,32 +413,19 @@ export async function fetchRepairBilling(
     throw new GdmsOtpError("This GDMS session has not completed OTP verification yet.");
   }
 
-  const listRows = await fetchAllBillingPages<GdmsBillingListRow>(session, GDMS_BILLING_LIST_PATH, {
-    sFromBillDate: toBillDateParam(dateFrom),
-    sToBillDate: toBillDateParam(dateTo),
-    sPmntType: "",
-    sWorkType: "",
-    sStat: "",
-    sBilngNo: "",
-    sRoNo: "",
-    sVin: "",
-    sRegNo: "",
-    sCustNo: "",
-    sCategory: "",
-    sModelCode: "",
-  });
-
-  const uniqueRos = dedupeBillingListByRoNo(listRows).slice(0, GDMS_BILLING_MAX_ROS);
+  const uniqueRos = Array.from(new Set(roNumbers.map((r) => r.trim()).filter(Boolean))).slice(
+    0,
+    GDMS_BILLING_MAX_ROS
+  );
 
   const totals: BillingTotals[] = [];
   const errors: { roNo: string; message: string }[] = [];
 
-  for (const listRow of uniqueRos) {
-    const roNo = listRow.roNo?.trim();
-    if (!roNo) continue;
+  for (const roNo of uniqueRos) {
     try {
-      totals.push(await fetchBillingDetailForRo(session, roNo, listRow.bilngNo ?? null));
+      totals.push(await fetchBillingDetailForRo(session, roNo, null));
     } catch (err) {
+      if (err instanceof GdmsBillingNotFoundError) continue;
       errors.push({ roNo, message: err instanceof Error ? err.message : "Failed to fetch billing detail" });
     }
   }

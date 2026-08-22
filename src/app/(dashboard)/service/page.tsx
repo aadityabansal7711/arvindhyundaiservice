@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
-import { Plus, Search, X, Info } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 
 import { apiGet, apiPost, apiDelete, apiPatch } from "@/lib/api";
 import type { BodyshopJobWithMeta, ServiceStatusSection } from "@/lib/bodyshop-types";
@@ -12,6 +12,7 @@ import { SERVICE_STATUS_SECTION_ORDER } from "@/lib/service-seed";
 import { isOwnerUser } from "@/lib/owner-access";
 import { getRoPrefixForBranchName, RO_PREFIX_SEPARATOR } from "@/lib/ro-prefix";
 import { getWorkTypeLabel } from "@/lib/gdms/mapper";
+import { BranchFilter } from "@/components/bodyshop/branch-filter";
 
 type DropdownOption = { id: string; label: string; value: string; branchId?: string | null };
 type Branch = { id: string; name: string };
@@ -34,6 +35,7 @@ function ServiceDashboardPageInner() {
   const [jobs, setJobs] = useState<BodyshopJobWithMeta[]>([]);
   const [search, setSearch] = useState("");
   const [activeStage, setActiveStage] = useState<ServiceStatusSection | "All">("All");
+  const [activeBranch, setActiveBranch] = useState<string>("All");
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [moveJob, setMoveJob] = useState<BodyshopJobWithMeta | null>(null);
@@ -171,10 +173,12 @@ function ServiceDashboardPageInner() {
   }, [fetchJobs]);
 
   const derived = useMemo(() => {
+    const branchScoped =
+      activeBranch === "All" ? jobs : jobs.filter((j) => j.branch_id === activeBranch);
     const filtered =
-      activeStage === "All" ? jobs : jobs.filter((j) => j.status_section === activeStage);
+      activeStage === "All" ? branchScoped : branchScoped.filter((j) => j.status_section === activeStage);
     return { filtered };
-  }, [jobs, activeStage]);
+  }, [jobs, activeStage, activeBranch]);
 
   const branchNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -326,19 +330,12 @@ function ServiceDashboardPageInner() {
 
   return (
     <>
-      <div className="space-y-5">
-        <div className="space-y-4">
-          <section className="space-y-3">
-            <div className="panel-surface p-3 sm:p-4 rounded-2xl space-y-3">
-              <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                <span>
-                  New service ROs also arrive automatically via the Bodyshop board&apos;s
-                  &quot;Fetch from GDMS&quot; — no separate fetch button needed here.
-                </span>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
+      <div className="flex flex-col sm:h-full space-y-5">
+        <div className="flex flex-col flex-1 min-h-0 space-y-4">
+          <section className="flex flex-col flex-1 min-h-0 space-y-3">
+            <div className="panel-surface p-3 sm:p-4 rounded-2xl space-y-3 shrink-0">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     value={search}
@@ -347,6 +344,7 @@ function ServiceDashboardPageInner() {
                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
                   />
                 </div>
+                <BranchFilter branches={branches} value={activeBranch} onChange={setActiveBranch} />
                 <button
                   type="button"
                   onClick={() => {
@@ -361,8 +359,8 @@ function ServiceDashboardPageInner() {
               </div>
             </div>
 
-            <div className="panel-surface rounded-2xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-200/70">
+            <div className="panel-surface rounded-2xl overflow-hidden flex flex-col flex-1 min-h-0">
+              <div className="px-5 py-4 border-b border-slate-200/70 shrink-0">
                 <div>
                   <div className="text-slate-950 font-bold">{activeStageLabel}</div>
                   <div className="text-sm text-slate-500">{activeStageCount} records</div>
@@ -374,10 +372,10 @@ function ServiceDashboardPageInner() {
               ) : derived.filtered.length === 0 ? (
                 <div className="p-8 text-center text-slate-500 text-sm">No records found.</div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-auto flex-1 min-h-0">
                   <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/90 border-b border-slate-200">
+                    <thead className="sticky top-0 z-10 bg-slate-50/90">
+                      <tr className="border-b border-slate-200">
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">R/O No</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Date</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Branch</th>
@@ -385,6 +383,8 @@ function ServiceDashboardPageInner() {
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Customer</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Model</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Type</th>
+                        <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Labour Amt</th>
+                        <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Parts Amt</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Advisor</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Status</th>
                         <th className="px-5 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-[0.14em]">Actions</th>
@@ -404,6 +404,16 @@ function ServiceDashboardPageInner() {
                           <td className="px-5 py-3 text-sm text-slate-900 font-medium">{job.customer_name ?? "—"}</td>
                           <td className="px-5 py-3 text-sm text-slate-700">{job.model ?? "—"}</td>
                           <td className="px-5 py-3 text-sm text-slate-700">{getWorkTypeLabel(job.work_type) ?? "—"}</td>
+                          <td className="px-5 py-3 text-sm text-slate-700">
+                            {job.billed_labor_amount != null
+                              ? `₹${job.billed_labor_amount.toLocaleString("en-IN")}`
+                              : "—"}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-slate-700">
+                            {job.billed_parts_amount != null
+                              ? `₹${job.billed_parts_amount.toLocaleString("en-IN")}`
+                              : "—"}
+                          </td>
                           <td className="px-5 py-3 text-sm text-slate-700">{job.service_advisor ?? "—"}</td>
                           <td className="px-5 py-3 text-sm">
                             <span

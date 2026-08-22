@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import supabaseAdmin from "@/lib/supabase-admin";
-import { applyRoPrefix, getRoPrefixForBranchName } from "@/lib/ro-prefix";
+import { applyRoPrefix, getRoPrefixForBranchName, stripAnyRoPrefix } from "@/lib/ro-prefix";
 import { SERVICE_STATUS_SECTION_ORDER } from "@/lib/service-seed";
 import type { JobCategory } from "@/lib/bodyshop-types";
 import {
@@ -96,25 +96,35 @@ export function buildInsertPayload(
  * patch. Returns null (no-op) when the category already matches — every
  * other field on the row stays completely untouched either way.
  *
+ * Deliberately never touches status_section: a work-type flip (e.g. GDMS
+ * later marking a claim as an insurance job) just moves the RO to the other
+ * board — it must never discard real in-progress stage data ("Claim
+ * Intimation Pending", "Painting", etc.) by jumping it back to that board's
+ * starting stage. Whatever stage string is already stored carries over as-is.
+ *
  * Pure/no I/O so it's directly unit-testable.
  */
 export function decideReclassification(
   existing: { job_category: string | null; status_section: string | null },
   newCategory: JobCategory
-): { job_category: JobCategory; status_section: string } | null {
+): { job_category: JobCategory } | null {
   const currentCategory: JobCategory = existing.job_category === "service" ? "service" : "bodyshop";
   if (currentCategory === newCategory) return null;
+  return { job_category: newCategory };
+}
 
-  // A stage name from the old category's workflow doesn't mean anything in
-  // the new one — except "Delivered", which is still true either way.
-  const statusSection =
-    existing.status_section === "Delivered"
-      ? "Delivered"
-      : newCategory === "service"
-        ? SERVICE_STATUS_SECTION_ORDER[0]
-        : DEFAULT_STATUS_SECTION;
-
-  return { job_category: newCategory, status_section: statusSection };
+/**
+ * For an RO that already exists: what to write for work_type on this fetch,
+ * or null to leave the existing value untouched. A blank/missing GDMS
+ * workType means GDMS didn't clearly report one this time (partial response,
+ * pagination quirk, etc.) — that's not the same as GDMS saying this RO has
+ * no type, so it must never overwrite a previously-known value with blank.
+ *
+ * Pure/no I/O so it's directly unit-testable.
+ */
+export function resolveWorkTypePatch(rowWorkType: string | null | undefined): { work_type: string } | null {
+  if (!rowWorkType || !rowWorkType.trim()) return null;
+  return { work_type: rowWorkType };
 }
 
 /**
@@ -133,6 +143,24 @@ export function decideReclassification(
  * safe because GDMS is the sole source of truth for both and staff never
  * edit them directly.
  */
+/**
+ * Every currently-open (not Delivered) RO number for a branch, with the
+ * branch's own prefix stripped back off — i.e. exactly the raw GDMS RO
+ * numbers gdms-service needs to look up Repair Billing for, since an RO's
+ * bill date routinely falls outside whatever date range a fetch is scoped
+ * to. Used to make sure billing gets backfilled for older open ROs, not just
+ * ones freshly touched by the current fetch.
+ */
+export async function getOpenRoNumbersForBranch(branchId: string): Promise<string[]> {
+  const { data, error } = await supabaseAdmin
+    .from(TABLE_NAME)
+    .select("ro_no")
+    .eq("branch_id", branchId)
+    .neq("status_section", "Delivered");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => stripAnyRoPrefix(r.ro_no));
+}
+
 export async function upsertBodyshopJobsFromGdms(
   rows: GdmsRoRow[],
   branchId: string,
@@ -196,10 +224,19 @@ async function upsertOne(
     if (existingErr) throw new Error(existingErr.message);
 
     if (existing) {
-      const reclassifyPatch = decideReclassification(existing, classifyJobCategory(row.workType));
+      // A blank/missing workType means GDMS didn't clearly report one on this
+      // fetch (partial response, pagination quirk, etc.) — that's not the
+      // same as GDMS saying "this is a plain service visit", so it must never
+      // be allowed to reclassify the job and reset its in-progress stage.
+      const workType = row.workType?.trim() || null;
+      const reclassifyPatch = workType ? decideReclassification(existing, classifyJobCategory(workType)) : null;
       const { error: updateErr } = await supabaseAdmin
         .from(TABLE_NAME)
-        .update({ work_type: row.workType, updated_at: now, ...(reclassifyPatch ?? {}) })
+        .update({
+          updated_at: now,
+          ...(resolveWorkTypePatch(row.workType) ?? {}),
+          ...(reclassifyPatch ?? {}),
+        })
         .eq("id", id);
       if (updateErr) throw new Error(updateErr.message);
       if (reclassifyPatch) {
