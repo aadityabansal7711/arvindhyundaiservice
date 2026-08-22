@@ -40,7 +40,7 @@ const sidebarItems: SidebarItem[] = [
     { name: "Service Delivered", href: "/service/delivered", icon: PackageCheck, permission: "users.manage" },
     { name: "Analytics", href: "/analytics", icon: BarChart3, ownerOnly: true },
     { name: "User Management", href: "/admin/users", icon: Users, permission: "users.manage" },
-    { name: "GDMS Credentials", href: "/admin/gdms-credentials", icon: KeyRound, ownerOnly: true },
+    { name: "GDMS Credentials", href: "/gdms-credentials", icon: KeyRound, permission: "gdms.fetch" },
     { name: "Data Page", href: "/data", icon: Database, permission: "users.manage" },
 ];
 
@@ -114,7 +114,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         ? "Service Operations"
                         : pathname.startsWith("/admin/users")
                             ? "User Management"
-                            : pathname.startsWith("/admin/gdms-credentials")
+                            : pathname.startsWith("/gdms-credentials")
                                 ? "GDMS Credentials"
                             : pathname.startsWith("/data")
                                 ? "Data Library"

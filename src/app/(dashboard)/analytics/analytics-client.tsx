@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, startOfMonth, startOfYear, subDays, subMonths } from "date-fns";
 import {
     Activity,
-    AlertTriangle,
     BarChart3,
     Building2,
     Car,
@@ -13,10 +12,12 @@ import {
     Clock,
     Download,
     Gauge,
+    Package,
     RefreshCw,
     TrendingUp,
     UserCog,
     Users,
+    Wallet,
 } from "lucide-react";
 import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -27,9 +28,9 @@ type BreakdownRow = {
     total: number;
     open: number;
     delivered: number;
-    overdue: number;
     avgTat: number;
-    labor: number;
+    labourAmount: number;
+    partsAmount: number;
     share: number;
 };
 
@@ -48,15 +49,21 @@ type Analytics = {
         totalRos: number;
         openRos: number;
         deliveredRos: number;
-        overdueRos: number;
         avgTatDays: number;
         avgOpenAgeDays: number;
-        totalLabor: number;
+        totalLabourAmount: number;
+        totalPartsAmount: number;
         deliveryRate: number;
     };
     monthly: MonthRow[];
-    statusDistribution: { status: string; count: number; percent: number }[];
-    aging: { range: string; count: number; percent: number }[];
+    statusDistribution: {
+        bodyshop: { status: string; count: number; percent: number }[];
+        service: { status: string; count: number; percent: number }[];
+    };
+    aging: {
+        bodyshop: { range: string; count: number; percent: number }[];
+        service: { range: string; count: number; percent: number }[];
+    };
     breakdowns: {
         branch: BreakdownRow[];
         model: BreakdownRow[];
@@ -81,6 +88,15 @@ const DIMENSIONS: { key: DimKey; label: string; icon: typeof Building2 }[] = [
 ];
 
 const num = (n: number) => new Intl.NumberFormat("en-IN").format(n || 0);
+const currency = (n: number) =>
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
+
+type CategoryFilter = "all" | "bodyshop" | "service";
+const CATEGORIES: { id: CategoryFilter; label: string }[] = [
+    { id: "all", label: "Both" },
+    { id: "bodyshop", label: "Bodyshop" },
+    { id: "service", label: "Service" },
+];
 
 function todayStr() {
     return format(new Date(), "yyyy-MM-dd");
@@ -105,6 +121,7 @@ export default function AnalyticsClient() {
     const [model, setModel] = useState("");
     const [insurer, setInsurer] = useState("");
     const [advisor, setAdvisor] = useState("");
+    const [category, setCategory] = useState<CategoryFilter>("all");
 
     const [data, setData] = useState<Analytics | null>(null);
     const [loading, setLoading] = useState(true);
@@ -117,7 +134,7 @@ export default function AnalyticsClient() {
             setLoading(true);
             setError(null);
             try {
-                const params = new URLSearchParams({ from, to });
+                const params = new URLSearchParams({ from, to, category });
                 if (branchId) params.set("branchId", branchId);
                 if (model) params.set("model", model);
                 if (insurer) params.set("insurer", insurer);
@@ -131,7 +148,7 @@ export default function AnalyticsClient() {
                 if (!signal?.aborted) setLoading(false);
             }
         },
-        [from, to, branchId, model, insurer, advisor],
+        [from, to, branchId, model, insurer, advisor, category],
     );
 
     useEffect(() => {
@@ -169,7 +186,7 @@ export default function AnalyticsClient() {
 
     const exportCsv = () => {
         if (!data) return;
-        const header = ["label", "total", "open", "delivered", "overdue", "avgTat", "share%"];
+        const header = ["label", "total", "open", "delivered", "avgTat", "labourAmount", "partsAmount", "share%"];
         const lines = [header.join(",")];
         for (const r of rows) {
             lines.push(
@@ -178,8 +195,9 @@ export default function AnalyticsClient() {
                     r.total,
                     r.open,
                     r.delivered,
-                    r.overdue,
                     r.avgTat,
+                    r.labourAmount,
+                    r.partsAmount,
                     r.share,
                 ].join(","),
             );
@@ -188,7 +206,7 @@ export default function AnalyticsClient() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `analytics-${dim}-${from}_to_${to}.csv`;
+        a.download = `analytics-${dim}-${category}-${from}_to_${to}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -214,6 +232,22 @@ export default function AnalyticsClient() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <div className="inline-flex items-center gap-0.5 p-1 rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                        {CATEGORIES.map((c) => (
+                            <button
+                                key={c.id}
+                                onClick={() => setCategory(c.id)}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                                    category === c.id
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-500 hover:text-slate-700",
+                                )}
+                            >
+                                {c.label}
+                            </button>
+                        ))}
+                    </div>
                     <button
                         onClick={() => fetchData()}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 bg-white/80 ring-1 ring-slate-200 hover:bg-white transition-colors"
@@ -331,12 +365,13 @@ export default function AnalyticsClient() {
             {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <KpiCard icon={ClipboardList} label="Total ROs" value={num(data?.totals.totalRos ?? 0)} sub="in range" tint="sky" loading={loading} />
-                <KpiCard icon={Activity} label="Open ROs" value={num(data?.totals.openRos ?? 0)} sub="in range" tint="amber" loading={loading} />
+                <KpiCard icon={Activity} label="Open ROs" value={num(data?.totals.openRos ?? 0)} sub="current" tint="amber" loading={loading} />
                 <KpiCard icon={CheckCircle2} label="Delivered" value={num(data?.totals.deliveredRos ?? 0)} sub={`${data?.totals.deliveryRate ?? 0}% delivery rate`} tint="emerald" loading={loading} />
-                <KpiCard icon={AlertTriangle} label="Overdue" value={num(data?.totals.overdueRos ?? 0)} sub="in range" tint="rose" loading={loading} />
                 <KpiCard icon={Clock} label="Avg TAT (delivered)" value={`${data?.totals.avgTatDays ?? 0} d`} sub="in range" tint="indigo" loading={loading} />
-                <KpiCard icon={Gauge} label="Avg Age (open)" value={`${data?.totals.avgOpenAgeDays ?? 0} d`} sub="in range" tint="violet" loading={loading} />
+                <KpiCard icon={Gauge} label="Avg Age (open)" value={`${data?.totals.avgOpenAgeDays ?? 0} d`} sub="current" tint="violet" loading={loading} />
                 <KpiCard icon={TrendingUp} label="Delivery Rate" value={`${data?.totals.deliveryRate ?? 0}%`} sub="in range" tint="cyan" loading={loading} />
+                <KpiCard icon={Wallet} label="Total Labour" value={currency(data?.totals.totalLabourAmount ?? 0)} sub="billed · in range" tint="teal" loading={loading} />
+                <KpiCard icon={Package} label="Total Parts" value={currency(data?.totals.totalPartsAmount ?? 0)} sub="billed · in range" tint="orange" loading={loading} />
             </div>
 
             {/* Monthly trend */}
@@ -355,35 +390,41 @@ export default function AnalyticsClient() {
                 <MonthlyChart months={data?.monthly ?? []} loading={loading} />
             </div>
 
-            {/* Status + Aging */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="panel-surface rounded-2xl p-4 sm:p-5">
-                    <h2 className="text-sm font-bold text-slate-900 mb-1">Open ROs by Stage</h2>
-                    <p className="text-xs text-slate-500 mb-4">Open ROs in the selected range, by stage</p>
-                    <BarList
-                        items={(data?.statusDistribution ?? []).map((s) => ({
-                            label: s.status,
-                            value: s.count,
-                            percent: s.percent,
-                        }))}
-                        color="bg-gradient-to-r from-sky-500 to-indigo-500"
-                        loading={loading}
-                    />
-                </div>
-                <div className="panel-surface rounded-2xl p-4 sm:p-5">
-                    <h2 className="text-sm font-bold text-slate-900 mb-1">Aging of Open ROs</h2>
-                    <p className="text-xs text-slate-500 mb-4">How long open jobs have been in the shop</p>
-                    <BarList
-                        items={(data?.aging ?? []).map((a) => ({
-                            label: a.range,
-                            value: a.count,
-                            percent: a.percent,
-                        }))}
-                        color="bg-gradient-to-r from-amber-400 to-rose-500"
-                        loading={loading}
-                    />
-                </div>
-            </div>
+            {/* Status + Aging — split by category: Bodyshop's 18-stage workflow and
+                Service's 2-stage workflow don't share a stage vocabulary, so each gets
+                its own panel instead of being lumped into one mixed chart. */}
+            {(category === "all" || category === "bodyshop") && (
+                <StageAgingSection
+                    title="Bodyshop"
+                    statusItems={(data?.statusDistribution.bodyshop ?? []).map((s) => ({
+                        label: s.status,
+                        value: s.count,
+                        percent: s.percent,
+                    }))}
+                    agingItems={(data?.aging.bodyshop ?? []).map((a) => ({
+                        label: a.range,
+                        value: a.count,
+                        percent: a.percent,
+                    }))}
+                    loading={loading}
+                />
+            )}
+            {(category === "all" || category === "service") && (
+                <StageAgingSection
+                    title="Service"
+                    statusItems={(data?.statusDistribution.service ?? []).map((s) => ({
+                        label: s.status,
+                        value: s.count,
+                        percent: s.percent,
+                    }))}
+                    agingItems={(data?.aging.service ?? []).map((a) => ({
+                        label: a.range,
+                        value: a.count,
+                        percent: a.percent,
+                    }))}
+                    loading={loading}
+                />
+            )}
 
             {/* Breakdown by dimension */}
             <div className="panel-surface rounded-2xl p-4 sm:p-5">
@@ -414,8 +455,9 @@ export default function AnalyticsClient() {
                             <option value="total">Sort: Total ROs</option>
                             <option value="open">Sort: Open</option>
                             <option value="delivered">Sort: Delivered</option>
-                            <option value="overdue">Sort: Overdue</option>
                             <option value="avgTat">Sort: Avg TAT</option>
+                            <option value="labourAmount">Sort: Labour</option>
+                            <option value="partsAmount">Sort: Parts</option>
                         </select>
                         <button
                             onClick={exportCsv}
@@ -427,6 +469,9 @@ export default function AnalyticsClient() {
                         </button>
                     </div>
                 </div>
+                <p className="text-[11px] text-slate-400 -mt-2 mb-3">
+                    Open reflects current status; Total, Delivered, Avg TAT, Labour &amp; Parts reflect the selected date range.
+                </p>
                 <BreakdownTable rows={rows} loading={loading} />
             </div>
         </div>
@@ -477,6 +522,7 @@ const TINTS: Record<string, { bg: string; text: string; ring: string }> = {
     violet: { bg: "bg-violet-50", text: "text-violet-600", ring: "ring-violet-100" },
     teal: { bg: "bg-teal-50", text: "text-teal-600", ring: "ring-teal-100" },
     cyan: { bg: "bg-cyan-50", text: "text-cyan-600", ring: "ring-cyan-100" },
+    orange: { bg: "bg-orange-50", text: "text-orange-600", ring: "ring-orange-100" },
 };
 
 function KpiCard({
@@ -579,6 +625,36 @@ function BarColumn({
     );
 }
 
+function StageAgingSection({
+    title,
+    statusItems,
+    agingItems,
+    loading,
+}: {
+    title: string;
+    statusItems: { label: string; value: number; percent: number }[];
+    agingItems: { label: string; value: number; percent: number }[];
+    loading?: boolean;
+}) {
+    return (
+        <div className="space-y-3">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-400">{title}</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="panel-surface rounded-2xl p-4 sm:p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-1">Open ROs by Stage</h3>
+                    <p className="text-xs text-slate-500 mb-4">Currently open {title} ROs, by stage (not limited by the date range)</p>
+                    <BarList items={statusItems} color="bg-gradient-to-r from-sky-500 to-indigo-500" loading={loading} />
+                </div>
+                <div className="panel-surface rounded-2xl p-4 sm:p-5">
+                    <h3 className="text-sm font-bold text-slate-900 mb-1">Aging of Open ROs</h3>
+                    <p className="text-xs text-slate-500 mb-4">How long open {title} jobs have been in the shop</p>
+                    <BarList items={agingItems} color="bg-gradient-to-r from-amber-400 to-rose-500" loading={loading} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function BarList({
     items,
     color,
@@ -634,15 +710,16 @@ function BreakdownTable({ rows, loading }: { rows: BreakdownRow[]; loading?: boo
 
     return (
         <div className="overflow-x-auto custom-scrollbar -mx-1">
-            <table className="w-full text-sm min-w-[720px]">
+            <table className="w-full text-sm min-w-[860px]">
                 <thead>
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100">
                         <th className="py-2 px-2">Name</th>
-                        <th className="py-2 px-2 w-[26%]">Volume</th>
+                        <th className="py-2 px-2 w-[22%]">Volume</th>
                         <th className="py-2 px-2 text-right">Open</th>
                         <th className="py-2 px-2 text-right">Delivered</th>
-                        <th className="py-2 px-2 text-right">Overdue</th>
                         <th className="py-2 px-2 text-right">Avg TAT</th>
+                        <th className="py-2 px-2 text-right">Labour</th>
+                        <th className="py-2 px-2 text-right">Parts</th>
                         <th className="py-2 px-2 text-right">Share</th>
                     </tr>
                 </thead>
@@ -663,14 +740,9 @@ function BreakdownTable({ rows, loading }: { rows: BreakdownRow[]; loading?: boo
                             </td>
                             <td className="py-2.5 px-2 text-right tabular-nums text-amber-600 font-medium">{r.open}</td>
                             <td className="py-2.5 px-2 text-right tabular-nums text-emerald-600 font-medium">{r.delivered}</td>
-                            <td className="py-2.5 px-2 text-right tabular-nums">
-                                {r.overdue > 0 ? (
-                                    <span className="text-rose-600 font-semibold">{r.overdue}</span>
-                                ) : (
-                                    <span className="text-slate-300">0</span>
-                                )}
-                            </td>
                             <td className="py-2.5 px-2 text-right tabular-nums text-slate-700">{r.avgTat} d</td>
+                            <td className="py-2.5 px-2 text-right tabular-nums text-teal-600 font-medium">{currency(r.labourAmount)}</td>
+                            <td className="py-2.5 px-2 text-right tabular-nums text-orange-600 font-medium">{currency(r.partsAmount)}</td>
                             <td className="py-2.5 px-2 text-right tabular-nums text-slate-500">{r.share}%</td>
                         </tr>
                     ))}

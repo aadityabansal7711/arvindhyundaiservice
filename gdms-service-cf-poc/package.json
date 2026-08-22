@@ -1,0 +1,16 @@
+{
+  "name": "gdms-service-cf-poc",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Throwaway connectivity proof-of-concept: can Cloudflare Browser Rendering (Playwright) reliably reach GDMS's login page? Not the real service — see ../gdms-service (Railway) for that, kept intact until this proves itself.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/playwright": "^1.3.0",
+    "@cloudflare/workers-types": "^5",
+    "typescript": "^5",
+    "wrangler": "^4"
+  }
+}

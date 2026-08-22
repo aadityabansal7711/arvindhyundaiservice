@@ -220,10 +220,7 @@ export default function BodyshopJobDetailPage() {
                   {job.ro_date ? format(new Date(job.ro_date), "dd MMM yyyy") : "—"}
                 </div>
                 <div>
-                  <span className="text-slate-500">Age:</span> {job.age_days}d{" "}
-                  {job.overdue ? (
-                    <span className="text-rose-700 font-semibold">(Overdue)</span>
-                  ) : null}
+                  <span className="text-slate-500">Age:</span> {job.age_days}d
                 </div>
               </div>
 

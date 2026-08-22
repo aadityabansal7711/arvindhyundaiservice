@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { KeyRound, Trash2, X } from "lucide-react";
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
-import { isOwnerUser } from "@/lib/owner-access";
 
 type CredentialRow = {
   branchId: string;
@@ -16,7 +15,8 @@ type CredentialRow = {
 
 export default function GdmsCredentialsPage() {
   const { data: session } = useSession();
-  const isOwner = isOwnerUser(session?.user);
+  const permissions = ((session?.user as { permissions?: string[] } | undefined)?.permissions) ?? [];
+  const hasAccess = permissions.includes("gdms.fetch") || permissions.includes("users.manage");
 
   const [rows, setRows] = useState<CredentialRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -28,7 +28,7 @@ export default function GdmsCredentialsPage() {
   const fetchRows = async () => {
     setIsLoading(true);
     try {
-      const data = await apiGet<CredentialRow[]>("/api/admin/gdms-credentials");
+      const data = await apiGet<CredentialRow[]>("/api/gdms-credentials");
       setRows(data);
     } catch (err) {
       console.error(err);
@@ -41,7 +41,7 @@ export default function GdmsCredentialsPage() {
     void fetchRows();
   }, []);
 
-  if (!isOwner) {
+  if (!hasAccess) {
     return (
       <div className="panel-surface p-6 rounded-2xl text-sm text-slate-600">
         You don&apos;t have access to this page.
@@ -70,7 +70,7 @@ export default function GdmsCredentialsPage() {
     setSaving(true);
     setError(null);
     try {
-      await apiPost("/api/admin/gdms-credentials", {
+      await apiPost("/api/gdms-credentials", {
         branchId: editingBranch.branchId,
         gdmsUserId: form.gdmsUserId.trim(),
         gdmsPassword: form.gdmsPassword,
@@ -85,9 +85,9 @@ export default function GdmsCredentialsPage() {
   };
 
   const remove = async (row: CredentialRow) => {
-    if (!window.confirm(`Remove stored GDMS credentials for ${row.branchName}?`)) return;
+    if (!window.confirm(`Remove your stored GDMS credentials for ${row.branchName}?`)) return;
     try {
-      await apiDelete(`/api/admin/gdms-credentials/${encodeURIComponent(row.branchId)}`);
+      await apiDelete(`/api/gdms-credentials/${encodeURIComponent(row.branchId)}`);
       await fetchRows();
     } catch (err) {
       console.error(err);
@@ -99,14 +99,19 @@ export default function GdmsCredentialsPage() {
       <div className="panel-surface p-4 sm:p-5 rounded-2xl">
         <div className="text-lg font-bold text-slate-900">GDMS Credentials</div>
         <div className="text-sm text-slate-500 mt-1">
-          Store each branch&apos;s GDMS (Hyundai NDMS) login so &quot;Fetch from GDMS&quot; can sign in
-          on your behalf. Passwords are encrypted at rest and never shown again after saving.
+          Store your own GDMS (Hyundai NDMS) login for the branches you&apos;re assigned to, so
+          &quot;Fetch from GDMS&quot; signs in as you. Passwords are encrypted at rest and never shown
+          again after saving.
         </div>
       </div>
 
       <div className="panel-surface rounded-2xl overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-slate-500 text-sm">Loading...</div>
+        ) : rows.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-sm">
+            You aren&apos;t assigned to any branch yet. Ask an admin to assign you to a branch first.
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -190,7 +195,7 @@ export default function GdmsCredentialsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-lg font-bold text-slate-900">{editingBranch.branchName}</div>
-                  <div className="text-sm text-slate-500">GDMS login for this branch</div>
+                  <div className="text-sm text-slate-500">Your GDMS login for this branch</div>
                 </div>
                 <button
                   type="button"

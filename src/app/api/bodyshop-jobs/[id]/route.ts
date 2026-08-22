@@ -96,7 +96,11 @@ export async function GET(
 ) {
   const auth = await requireBodyshopAccess();
   if (!auth.ok) return auth.response;
-  const rateLimitError = enforceRateLimit(request, "bodyshop-update", 90, 60_000, auth.user.id ?? auth.user.email);
+  // This is a read (job detail + the per-row "view photos" fetch, both hit
+  // repeatedly while browsing a 150+ row board), not a write — despite the
+  // bucket's old "bodyshop-update" name, PATCH below has no rate limit at
+  // all. Give reads a much higher ceiling so normal browsing never 429s.
+  const rateLimitError = enforceRateLimit(request, "bodyshop-detail-get", 300, 60_000, auth.user.id ?? auth.user.email);
   if (rateLimitError) return rateLimitError;
 
   const { id } = await context.params;
@@ -449,7 +453,7 @@ export async function DELETE(
 
   const auth = await requireSession();
   if (!auth.ok) return auth.response;
-  const rateLimitError = enforceRateLimit(request, "bodyshop-delete", 15, 60_000, auth.user.id ?? auth.user.email);
+  const rateLimitError = enforceRateLimit(request, "bodyshop-delete", 90, 60_000, auth.user.id ?? auth.user.email);
   if (rateLimitError) return rateLimitError;
 
   // Requirement: only this specific admin user should be able to delete ROs.

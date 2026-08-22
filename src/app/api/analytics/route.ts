@@ -12,7 +12,7 @@ import { listBodyshopJobs } from "@/lib/bodyshop-repo";
 import { getBranchNameMap } from "@/lib/branch-list";
 import { requireSession } from "@/lib/server-auth";
 import { isOwnerUser } from "@/lib/owner-access";
-import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
+import type { BodyshopJobWithMeta, JobCategory } from "@/lib/bodyshop-types";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +24,9 @@ type BreakdownRow = {
     total: number;
     open: number;
     delivered: number;
-    overdue: number;
     avgTat: number;
-    labor: number;
+    labourAmount: number;
+    partsAmount: number;
     share: number;
 };
 
@@ -58,11 +58,10 @@ function avg(nums: number[]): number {
     return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-function buildBreakdown(
+function groupByKey(
     jobs: BodyshopJobWithMeta[],
     keyOf: (j: BodyshopJobWithMeta) => string,
-    labelOf: (key: string) => string,
-): BreakdownRow[] {
+): Map<string, BodyshopJobWithMeta[]> {
     const groups = new Map<string, BodyshopJobWithMeta[]>();
     for (const job of jobs) {
         const key = keyOf(job) || UNASSIGNED;
@@ -70,10 +69,29 @@ function buildBreakdown(
         if (arr) arr.push(job);
         else groups.set(key, [job]);
     }
+    return groups;
+}
 
-    const total = jobs.length || 1;
+/**
+ * `rangeJobs` (date-windowed) drives total/delivered/avgTat/labour/parts/share.
+ * `openAllTime` (unwindowed, already status!=="Delivered") drives open,
+ * so per-row "Open" matches the all-time Open ROs KPI instead of the date filter.
+ */
+function buildBreakdown(
+    rangeJobs: BodyshopJobWithMeta[],
+    openAllTime: BodyshopJobWithMeta[],
+    keyOf: (j: BodyshopJobWithMeta) => string,
+    labelOf: (key: string) => string,
+): BreakdownRow[] {
+    const rangeGroups = groupByKey(rangeJobs, keyOf);
+    const openGroups = groupByKey(openAllTime, keyOf);
+
+    const allKeys = new Set<string>([...rangeGroups.keys(), ...openGroups.keys()]);
+    const total = rangeJobs.length || 1;
     const rows: BreakdownRow[] = [];
-    for (const [key, list] of groups) {
+    for (const key of allKeys) {
+        const list = rangeGroups.get(key) ?? [];
+        const openList = openGroups.get(key) ?? [];
         const delivered = list.filter((j) => j.status_section === "Delivered");
         const tats = delivered
             .map(tatForDelivered)
@@ -82,11 +100,11 @@ function buildBreakdown(
             key,
             label: key === UNASSIGNED ? "Unassigned" : labelOf(key),
             total: list.length,
-            open: list.length - delivered.length,
+            open: openList.length,
             delivered: delivered.length,
-            overdue: list.filter((j) => j.overdue).length,
             avgTat: Number(avg(tats).toFixed(1)),
-            labor: list.reduce((sum, j) => sum + (Number(j.tentative_labor) || 0), 0),
+            labourAmount: list.reduce((sum, j) => sum + (Number(j.billed_labor_amount) || 0), 0),
+            partsAmount: list.reduce((sum, j) => sum + (Number(j.billed_parts_amount) || 0), 0),
             share: Number(((list.length / total) * 100).toFixed(1)),
         });
     }
@@ -118,13 +136,17 @@ export async function GET(req: NextRequest) {
         const modelFilter = url.searchParams.get("model") || "";
         const insurerFilter = url.searchParams.get("insurer") || "";
         const advisorFilter = url.searchParams.get("advisor") || "";
+        const categoryParam = url.searchParams.get("category") || "all";
+        const categoryFilter: JobCategory | "all" =
+            categoryParam === "bodyshop" || categoryParam === "service" ? categoryParam : "all";
 
         const [allJobs, branchNameMap] = await Promise.all([
             listBodyshopJobs({
                 limit: 20000,
                 statusSection: "All",
+                jobCategory: categoryFilter,
                 select:
-                    "id,ro_no,branch_id,ro_date,model,insurance_company,surveyor,service_advisor,status_section,promised_date,tentative_labor,created_at,updated_at",
+                    "id,ro_no,branch_id,ro_date,model,insurance_company,surveyor,service_advisor,status_section,promised_date,job_category,billed_labor_amount,billed_parts_amount,created_at,updated_at",
             }),
             getBranchNameMap(),
         ]);
@@ -139,36 +161,40 @@ export async function GET(req: NextRequest) {
         };
         const scopedJobs = allJobs.filter(matchesScope);
 
-        // Window filter on ro_date — drives every metric so the date picker actually
-        // changes the numbers. Records with no parseable ro_date can't be excluded by
-        // date, so they're always kept (this keeps the default full range aligned with
-        // the Bodyshop board's open inventory). They simply don't appear on the trend.
+        // Window filter on ro_date — drives the "in range" metrics (Total, Delivered,
+        // TAT, monthly trend, Labour/Parts) so the date picker actually changes those
+        // numbers. Records with no parseable ro_date can't be excluded by date, so
+        // they're always kept. They simply don't appear on the monthly trend.
         const fromTime = from.getTime();
         const toTime = to.getTime();
-        const jobs = scopedJobs.filter((job) => {
+        const jobsInRange = scopedJobs.filter((job) => {
             const d = parseDay(job.ro_date);
             if (!d) return true;
             const t = d.getTime();
             return t >= fromTime && t <= toTime;
         });
 
-        const delivered = jobs.filter((j) => j.status_section === "Delivered");
+        // "Currently open" metrics ignore the date window entirely — an RO created
+        // before the range start but still open must still count as open, matching
+        // what the Bodyshop/Service board shows right now.
+        const openAllTime = scopedJobs.filter((j) => j.status_section !== "Delivered");
+
+        const delivered = jobsInRange.filter((j) => j.status_section === "Delivered");
         const deliveredTats = delivered
             .map(tatForDelivered)
             .filter((n): n is number => n != null);
-        const openJobs = jobs.filter((j) => j.status_section !== "Delivered");
 
         const totals = {
-            totalRos: jobs.length,
-            openRos: openJobs.length,
+            totalRos: jobsInRange.length,
+            openRos: openAllTime.length,
             deliveredRos: delivered.length,
-            overdueRos: openJobs.filter((j) => j.overdue).length,
             avgTatDays: Number(avg(deliveredTats).toFixed(1)),
-            avgOpenAgeDays: Number(avg(openJobs.map((j) => j.age_days)).toFixed(1)),
-            totalLabor: jobs.reduce((s, j) => s + (Number(j.tentative_labor) || 0), 0),
+            avgOpenAgeDays: Number(avg(openAllTime.map((j) => j.age_days)).toFixed(1)),
+            totalLabourAmount: jobsInRange.reduce((s, j) => s + (Number(j.billed_labor_amount) || 0), 0),
+            totalPartsAmount: jobsInRange.reduce((s, j) => s + (Number(j.billed_parts_amount) || 0), 0),
             deliveryRate:
-                jobs.length > 0
-                    ? Number(((delivered.length / jobs.length) * 100).toFixed(1))
+                jobsInRange.length > 0
+                    ? Number(((delivered.length / jobsInRange.length) * 100).toFixed(1))
                     : 0,
         };
 
@@ -187,14 +213,14 @@ export async function GET(req: NextRequest) {
             });
         }
         const monthTats = new Map<string, number[]>();
-        for (const job of jobs) {
+        for (const job of jobsInRange) {
             const created = parseDay(job.ro_date);
             if (created) {
                 const key = format(created, "yyyy-MM");
                 const row = monthMap.get(key);
                 if (row) {
                     row.created += 1;
-                    row.labor += Number(job.tentative_labor) || 0;
+                    row.labor += Number(job.billed_labor_amount) || 0;
                 }
             }
             if (job.status_section === "Delivered") {
@@ -220,23 +246,25 @@ export async function GET(req: NextRequest) {
         }
         const monthly = Array.from(monthMap.values());
 
-        // Status distribution of open ROs in range (by stage).
-        const statusCounts = new Map<string, number>();
-        for (const job of openJobs) {
-            statusCounts.set(job.status_section, (statusCounts.get(job.status_section) ?? 0) + 1);
+        // Status distribution of currently-open ROs (by stage) — all-time, not date-windowed.
+        // Split by job_category: Bodyshop's 18-stage workflow and Service's 2-stage
+        // workflow use completely different stage vocabularies, so lumping them into
+        // one list under "Both" produced a meaningless mixed chart.
+        function buildStatusDistribution(list: BodyshopJobWithMeta[]) {
+            const statusCounts = new Map<string, number>();
+            for (const job of list) {
+                statusCounts.set(job.status_section, (statusCounts.get(job.status_section) ?? 0) + 1);
+            }
+            return Array.from(statusCounts.entries())
+                .map(([status, count]) => ({
+                    status,
+                    count,
+                    percent: list.length > 0 ? Number(((count / list.length) * 100).toFixed(1)) : 0,
+                }))
+                .sort((a, b) => b.count - a.count);
         }
-        const statusDistribution = Array.from(statusCounts.entries())
-            .map(([status, count]) => ({
-                status,
-                count,
-                percent:
-                    openJobs.length > 0
-                        ? Number(((count / openJobs.length) * 100).toFixed(1))
-                        : 0,
-            }))
-            .sort((a, b) => b.count - a.count);
 
-        // Aging buckets for open ROs in range.
+        // Aging buckets for currently-open ROs — all-time, not date-windowed, split by category.
         const agingDefs = [
             { range: "0–3 days", min: 0, max: 3 },
             { range: "4–7 days", min: 4, max: 7 },
@@ -244,29 +272,39 @@ export async function GET(req: NextRequest) {
             { range: "16–30 days", min: 16, max: 30 },
             { range: "30+ days", min: 31, max: Infinity },
         ];
-        const aging = agingDefs.map((def) => {
-            const count = openJobs.filter(
-                (j) => j.age_days >= def.min && j.age_days <= def.max,
-            ).length;
-            return {
-                range: def.range,
-                count,
-                percent:
-                    openJobs.length > 0
-                        ? Number(((count / openJobs.length) * 100).toFixed(1))
-                        : 0,
-            };
-        });
+        function buildAging(list: BodyshopJobWithMeta[]) {
+            return agingDefs.map((def) => {
+                const count = list.filter((j) => j.age_days >= def.min && j.age_days <= def.max).length;
+                return {
+                    range: def.range,
+                    count,
+                    percent: list.length > 0 ? Number(((count / list.length) * 100).toFixed(1)) : 0,
+                };
+            });
+        }
+
+        const openBodyshop = openAllTime.filter((j) => j.job_category === "bodyshop");
+        const openService = openAllTime.filter((j) => j.job_category === "service");
+
+        const statusDistribution = {
+            bodyshop: buildStatusDistribution(openBodyshop),
+            service: buildStatusDistribution(openService),
+        };
+        const aging = {
+            bodyshop: buildAging(openBodyshop),
+            service: buildAging(openService),
+        };
 
         const breakdowns = {
             branch: buildBreakdown(
-                jobs,
+                jobsInRange,
+                openAllTime,
                 (j) => j.branch_id || "",
                 (key) => branchNameMap.get(key) ?? "Unknown branch",
             ),
-            model: buildBreakdown(jobs, (j) => j.model || "", (k) => k),
-            insurer: buildBreakdown(jobs, (j) => j.insurance_company || "", (k) => k),
-            advisor: buildBreakdown(jobs, (j) => j.service_advisor || "", (k) => k),
+            model: buildBreakdown(jobsInRange, openAllTime, (j) => j.model || "", (k) => k),
+            insurer: buildBreakdown(jobsInRange, openAllTime, (j) => j.insurance_company || "", (k) => k),
+            advisor: buildBreakdown(jobsInRange, openAllTime, (j) => j.service_advisor || "", (k) => k),
         };
 
         // Filter option lists (computed over the full dataset, not the windowed set).

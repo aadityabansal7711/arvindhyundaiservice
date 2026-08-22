@@ -79,10 +79,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Every RO already open on this branch's board — sent along so gdms-service
-  // checks Repair Billing for all of them, not just ones whose bill date
-  // happens to fall inside dateFrom/dateTo (which only scopes the RO list).
-  // A lookup failure here shouldn't block the fetch, just narrow billing.
+  // Every RO already open on this branch's board, plus any Delivered RO we've
+  // never billed yet — sent along so gdms-service checks Repair Billing for
+  // all of them, not just ones whose bill date happens to fall inside
+  // dateFrom/dateTo (which only scopes the RO list) or whose RO-open date
+  // happens to land in this fetch's range. A lookup failure here shouldn't
+  // block the fetch, just narrow billing.
   const openRoNumbers = await getOpenRoNumbersForBranch(branchId).catch(() => [] as string[]);
 
   // The gdms-service call does the RO-list fetch, the Repair Billing fetch

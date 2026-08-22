@@ -36,10 +36,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden branch" }, { status: 403 });
   }
 
-  const credential = await prisma.gdmsCredential.findUnique({ where: { branchId } });
+  const userId = auth.user.id;
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const credential = await prisma.gdmsCredential.findUnique({
+    where: { userId_branchId: { userId, branchId } },
+  });
   if (!credential) {
     return NextResponse.json(
-      { error: "GDMS credentials are not configured for this branch. Set them up in Admin → GDMS Credentials." },
+      { error: "You haven't set up your GDMS credentials for this branch yet. Set them up on the GDMS Credentials page." },
       { status: 400 }
     );
   }
@@ -49,7 +56,7 @@ export async function POST(request: NextRequest) {
     password = decryptSecret(credential.encryptedPassword);
   } catch {
     return NextResponse.json(
-      { error: "Failed to decrypt stored GDMS credentials. Please re-enter them in Admin → GDMS Credentials." },
+      { error: "Failed to decrypt stored GDMS credentials. Please re-enter them on the GDMS Credentials page." },
       { status: 500 }
     );
   }
@@ -57,7 +64,7 @@ export async function POST(request: NextRequest) {
   try {
     const { sessionId } = await startGdmsLogin({
       branchId,
-      appUserId: auth.user.id ?? auth.user.email ?? "unknown",
+      appUserId: userId,
       gdmsUserId: credential.gdmsUserId,
       gdmsPassword: password,
     });

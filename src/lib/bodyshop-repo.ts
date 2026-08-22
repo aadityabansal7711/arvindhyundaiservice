@@ -12,7 +12,7 @@ type ListParams = {
   branchIds?: string[];
   limit?: number;
   select?: string;
-  jobCategory?: JobCategory;
+  jobCategory?: JobCategory | "all";
 };
 
 let seedCheckPromise: Promise<void> | null = null;
@@ -77,13 +77,8 @@ export function addMeta(job: BodyshopJob): BodyshopJobWithMeta {
     job.ro_date && !Number.isNaN(Date.parse(job.ro_date))
       ? differenceInDays(today, new Date(job.ro_date))
       : 0;
-  const overdue =
-    !!job.promised_date &&
-    !Number.isNaN(Date.parse(job.promised_date)) &&
-    new Date(job.promised_date) < today &&
-    job.status_section !== "Delivered";
 
-  return { ...job, age_days, overdue };
+  return { ...job, age_days };
 }
 
 export async function listBodyshopJobs(
@@ -99,9 +94,12 @@ export async function listBodyshopJobs(
   let query = supabaseAdmin
     .from(TABLE_NAME)
     .select(select && select.trim().length > 0 ? select : "*")
-    .eq("job_category", jobCategory)
     .order("ro_date", { ascending: false })
     .limit(limit);
+
+  if (jobCategory !== "all") {
+    query = query.eq("job_category", jobCategory);
+  }
 
   if (statusSection && statusSection !== "All") {
     query = query.eq("status_section", statusSection);
@@ -130,7 +128,10 @@ export async function listBodyshopJobs(
 
     // Fallback: filter in-memory seed data.
     const filtered = BODYSHOP_JOBS_SEED.filter((job) => {
-      if (resolveJobCategory((job as { job_category?: unknown }).job_category) !== jobCategory) {
+      if (
+        jobCategory !== "all" &&
+        resolveJobCategory((job as { job_category?: unknown }).job_category) !== jobCategory
+      ) {
         return false;
       }
       if (statusSection && statusSection !== "All" && job.status_section !== statusSection) {

@@ -82,7 +82,6 @@ export interface BodyshopJob {
 }
 
 export interface BodyshopJobWithMeta extends BodyshopJob {
-  overdue: boolean;
   age_days: number;
   branch_name?: string | null;
 }

@@ -1,0 +1,10 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gdms-service-cf-poc",
+  "main": "src/index.ts",
+  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2025-09-15",
+  "browser": {
+    "binding": "MYBROWSER"
+  }
+}

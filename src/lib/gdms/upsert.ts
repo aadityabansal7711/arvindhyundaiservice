@@ -144,19 +144,26 @@ export function resolveWorkTypePatch(rowWorkType: string | null | undefined): { 
  * edit them directly.
  */
 /**
- * Every currently-open (not Delivered) RO number for a branch, with the
- * branch's own prefix stripped back off — i.e. exactly the raw GDMS RO
- * numbers gdms-service needs to look up Repair Billing for, since an RO's
- * bill date routinely falls outside whatever date range a fetch is scoped
- * to. Used to make sure billing gets backfilled for older open ROs, not just
- * ones freshly touched by the current fetch.
+ * Every RO number for a branch that still needs a Repair Billing check, with
+ * the branch's own prefix stripped back off — i.e. exactly the raw GDMS RO
+ * numbers gdms-service needs to look up billing for, since an RO's bill date
+ * routinely falls outside whatever date range a fetch is scoped to. That's
+ * every currently-open (not Delivered) RO, PLUS any Delivered RO we've never
+ * successfully billed yet (billing_fetched_at null) — a car can be marked
+ * Delivered in-app before GDMS gets around to generating its bill, and once
+ * it's Delivered it may never again fall inside a fetched date range (RO
+ * list is scoped by the RO's *open* date, not delivery date), so without
+ * this it would simply never get billed. billing_fetched_at is set the
+ * moment a billing fetch actually matches this RO (see
+ * applyBillingToBodyshopJobs below), so once that happens this RO drops out
+ * of this query on its own.
  */
 export async function getOpenRoNumbersForBranch(branchId: string): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from(TABLE_NAME)
     .select("ro_no")
     .eq("branch_id", branchId)
-    .neq("status_section", "Delivered");
+    .or("status_section.neq.Delivered,billing_fetched_at.is.null");
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => stripAnyRoPrefix(r.ro_no));
 }

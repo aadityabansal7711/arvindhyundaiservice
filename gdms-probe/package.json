@@ -1,0 +1,19 @@
+{
+  "name": "gdms-probe",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Standalone network diagnostic harness for GDMS (ndms.hmil.net) reachability — DNS, raw TCP, TLS/SNI, HTTP, and outbound IP/ASN, layer by layer. Does not touch gdms-service or its Playwright login flow. Run the same probe locally and from any host to get directly comparable output.",
+  "scripts": {
+    "probe": "tsx src/cli.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.35",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

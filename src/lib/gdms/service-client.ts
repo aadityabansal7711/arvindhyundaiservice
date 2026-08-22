@@ -105,11 +105,12 @@ export type GdmsFetchResult = {
 };
 
 /**
- * `openRoNumbers` — every currently-open RO (raw, unprefixed) this branch
- * already has in the DB — is unioned server-side with whatever this RO-list
- * fetch itself returns, so Repair Billing gets checked for all of them
- * regardless of whether their bill date falls inside `dateFrom`/`dateTo`
- * (which only scopes the RO list, not billing).
+ * `openRoNumbers` — every currently-open RO plus any Delivered RO never yet
+ * billed (raw, unprefixed; see getOpenRoNumbersForBranch) — is unioned
+ * server-side with whatever this RO-list fetch itself returns, so Repair
+ * Billing gets checked for all of them regardless of whether their bill date
+ * falls inside `dateFrom`/`dateTo` (which only scopes the RO list, not
+ * billing) or their RO-open date falls inside this fetch's range at all.
  */
 export function fetchGdmsRos(
   sessionId: string,
