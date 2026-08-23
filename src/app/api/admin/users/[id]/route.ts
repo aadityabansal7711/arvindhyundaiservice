@@ -29,7 +29,7 @@ export async function PATCH(
     try {
         const body = await readJsonObject(req);
         if (body instanceof NextResponse) return body;
-        const { name, phone, roleId, branchId, branchIds, active } = body;
+        const { name, phone, roleId, branchId, branchIds, active, gdmsAccess } = body;
 
         const data: Record<string, unknown> = {};
         if (typeof name === "string") data.name = name.trim();
@@ -62,6 +62,23 @@ export async function PATCH(
                 await tx.userBranch.deleteMany({ where: { userId: id } });
                 if (nextBranchId) {
                     await tx.userBranch.create({ data: { userId: id, branchId: nextBranchId } });
+                }
+            }
+
+            if (typeof gdmsAccess === "boolean") {
+                const gdmsPermission = await tx.permission.findUnique({ where: { key: "gdms.fetch" } });
+                if (gdmsPermission) {
+                    if (gdmsAccess) {
+                        await tx.userPermission.upsert({
+                            where: { userId_permissionId: { userId: id, permissionId: gdmsPermission.id } },
+                            update: {},
+                            create: { userId: id, permissionId: gdmsPermission.id },
+                        });
+                    } else {
+                        await tx.userPermission.deleteMany({
+                            where: { userId: id, permissionId: gdmsPermission.id },
+                        });
+                    }
                 }
             }
 

@@ -57,15 +57,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
     }, [session, router]);
 
-    const userRole = (session?.user as any)?.role as string | undefined;
     const userPermissions = (session?.user as any)?.permissions || [];
-    const isManager = userRole?.toLowerCase() === "manager";
-
-    const managerAllowedRoots = new Set([
-        "/bodyshop",
-        "/service",
-        "/data",
-    ]);
 
     const isOwner = isOwnerUser(session?.user);
 
@@ -75,10 +67,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         if (item.permission && !userPermissions.includes(item.permission)) {
             return false;
-        }
-        if (isManager) {
-            const root = "/" + item.href.split("/")[1];
-            if (!managerAllowedRoots.has(root)) return false;
         }
         return true;
     });
@@ -132,14 +120,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         return pathname.startsWith(href);
     };
-
-    useEffect(() => {
-        if (!session || !isManager) return;
-        const root = "/" + pathname.split("/")[1];
-        if (!managerAllowedRoots.has(root)) {
-            router.replace("/bodyshop");
-        }
-    }, [session, isManager, pathname, router]);
 
     return (
         <div className="min-h-screen bg-[var(--background)] flex text-slate-950">

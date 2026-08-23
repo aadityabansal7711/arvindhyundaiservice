@@ -220,10 +220,6 @@ export function GdmsFetchModal({ branches, onClose, onImported }: Props) {
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500">
-                Start with a narrow range (1–2 days) the first time you use this, so you can check
-                the imported ROs look right before pulling a bigger batch.
-              </p>
             </div>
           )}
 

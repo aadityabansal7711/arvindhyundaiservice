@@ -21,6 +21,14 @@ export const GDMS_BILLING_PART_PATH = "/ser/serd/selectRepairBillingPart.json";
 export const GDMS_BILLING_PAGE_SIZE = 50;
 /** Safety cap on how many ROs one fetch will pull Labour/Parts billing detail for. */
 export const GDMS_BILLING_MAX_ROS = 300;
+/**
+ * How many ROs' billing detail to fetch concurrently. Each one is 3
+ * sequential-ish round trips (detail, then labour+parts in parallel) to a
+ * slow portal, so fetching them one RO at a time made billing the dominant
+ * cost of a GDMS fetch on branches with many open ROs. Kept modest so we
+ * don't trip GDMS's anti-bot defenses.
+ */
+export const GDMS_BILLING_CONCURRENCY = 6;
 
 /** Real element IDs on the GDMS login page, captured from a live HAR export. */
 export const GDMS_SELECTORS = {

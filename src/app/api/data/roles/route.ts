@@ -16,8 +16,16 @@ export async function GET() {
     const authError = await checkAuth();
     if (authError) return authError;
     try {
-        const roles = await prisma.role.findMany({ orderBy: { name: "asc" } });
-        return NextResponse.json(roles);
+        const roles = await prisma.role.findMany({
+            orderBy: { name: "asc" },
+            include: { permissions: { include: { permission: true } } },
+        });
+        const result = roles.map((r) => ({
+            id: r.id,
+            name: r.name,
+            permissionKeys: r.permissions.map((rp) => rp.permission.key),
+        }));
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

@@ -10,6 +10,7 @@ import {
 } from "./proxy-config";
 import {
   GDMS_BASE_URL,
+  GDMS_BILLING_CONCURRENCY,
   GDMS_BILLING_DETAIL_PATH,
   GDMS_BILLING_LABOUR_PATH,
   GDMS_BILLING_MAX_ROS,
@@ -412,6 +413,10 @@ export async function fetchRepairBillingForRoNumbers(
   if (session.stage !== "authenticated") {
     throw new GdmsOtpError("This GDMS session has not completed OTP verification yet.");
   }
+  // Reassigned to a plain const so TS keeps the non-null narrowing inside
+  // the worker closure below (it can't prove `session` is still non-null
+  // there otherwise).
+  const activeSession = session;
 
   const uniqueRos = Array.from(new Set(roNumbers.map((r) => r.trim()).filter(Boolean))).slice(
     0,
@@ -421,14 +426,23 @@ export async function fetchRepairBillingForRoNumbers(
   const totals: BillingTotals[] = [];
   const errors: { roNo: string; message: string }[] = [];
 
-  for (const roNo of uniqueRos) {
-    try {
-      totals.push(await fetchBillingDetailForRo(session, roNo, null));
-    } catch (err) {
-      if (err instanceof GdmsBillingNotFoundError) continue;
-      errors.push({ roNo, message: err instanceof Error ? err.message : "Failed to fetch billing detail" });
+  // A shared cursor handed out to a small pool of workers, rather than one
+  // RO at a time — see GDMS_BILLING_CONCURRENCY for why.
+  let cursor = 0;
+  async function worker() {
+    while (cursor < uniqueRos.length) {
+      const roNo = uniqueRos[cursor++];
+      try {
+        totals.push(await fetchBillingDetailForRo(activeSession, roNo, null));
+      } catch (err) {
+        if (err instanceof GdmsBillingNotFoundError) continue;
+        errors.push({ roNo, message: err instanceof Error ? err.message : "Failed to fetch billing detail" });
+      }
     }
   }
+  await Promise.all(
+    Array.from({ length: Math.min(GDMS_BILLING_CONCURRENCY, uniqueRos.length) }, worker)
+  );
 
   return { totals, errors };
 }

@@ -11,12 +11,14 @@ import {
     ListOrdered,
     X,
     Loader2,
+    KeyRound,
 } from "lucide-react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { isOwnerUser } from "@/lib/owner-access";
 
-type Role = { id: string; name: string };
+type Role = { id: string; name: string; permissionKeys: string[] };
+type Permission = { id: string; key: string };
 type Branch = { id: string; name: string };
 type DropdownOption = { id: string; groupKey: string; label: string };
 
@@ -25,11 +27,33 @@ const OPTION_GROUPS: { key: string; label: string }[] = [
     { key: "model", label: "Model" },
 ];
 
+const PERMISSION_LABELS: Record<string, string> = {
+    "ro.view": "View repair orders",
+    "ro.edit": "Edit repair orders",
+    "ro.create": "Create repair orders",
+    "billing.view": "View billing",
+    "billing.edit": "Edit billing",
+    "parts.view": "View parts",
+    "parts.edit": "Edit parts",
+    "ndc.view": "View NDC",
+    "ndc.edit": "Edit NDC",
+    "users.manage": "Manage users & roles (admin)",
+    "roles.manage": "Manage roles",
+    "import.manage": "Manage imports",
+    "dashboard.view": "View dashboard",
+    "branches.view_all": "View all branches",
+    "branches.view_multi": "View multiple branches",
+    "gdms.fetch": "GDMS credentials & fetch",
+};
+
+const permissionLabel = (key: string) => PERMISSION_LABELS[key] ?? key;
+
 export default function DataPage() {
     const { data: session, update: updateSession } = useSession();
     const [activeTab, setActiveTab] = useState<"roles" | "branches" | "options">("roles");
 
     const [roles, setRoles] = useState<Role[]>([]);
+    const [permissions, setPermissions] = useState<Permission[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
     const [options, setOptions] = useState<DropdownOption[]>([]);
     const [loading, setLoading] = useState(true);
@@ -46,6 +70,10 @@ export default function DataPage() {
     const [showBranchModal, setShowBranchModal] = useState(false);
     const [showOptionModal, setShowOptionModal] = useState(false);
 
+    const [permissionsRole, setPermissionsRole] = useState<Role | null>(null);
+    const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+    const [selectedPermissionKeys, setSelectedPermissionKeys] = useState<string[]>([]);
+
     const [loadedRoles, setLoadedRoles] = useState(false);
     const [loadedBranches, setLoadedBranches] = useState(false);
     const [loadedOptions, setLoadedOptions] = useState(false);
@@ -57,6 +85,7 @@ export default function DataPage() {
     const canEditData = isOwnerUser(session?.user);
 
     const fetchRoles = () => apiGet<Role[]>("/api/data/roles").then(setRoles).catch(() => setRoles([]));
+    const fetchPermissions = () => apiGet<Permission[]>("/api/data/permissions").then(setPermissions).catch(() => setPermissions([]));
     const fetchBranches = () => apiGet<Branch[]>("/api/data/branches", { cacheMs: 60_000 }).then(setBranches).catch(() => setBranches([]));
     const fetchOptions = () => apiGet<DropdownOption[]>("/api/data/options").then(setOptions).catch(() => setOptions([]));
 
@@ -70,7 +99,7 @@ export default function DataPage() {
     useEffect(() => {
         if (activeTab === "roles" && !loadedRoles) {
             setLoading(true);
-            fetchRoles().finally(() => {
+            Promise.all([fetchRoles(), fetchPermissions()]).finally(() => {
                 setLoadedRoles(true);
                 setLoading(false);
             });
@@ -130,6 +159,41 @@ export default function DataPage() {
             // On error, refetch to restore correct state and show message
             fetchRoles();
             setError(err?.message || "Failed to delete role");
+        }
+    };
+
+    // gdms.fetch is granted per user only (User Management > Edit User), never
+    // via a role, so it never appears as a toggleable role permission.
+    const roleAssignablePermissions = permissions.filter((p) => p.key !== "gdms.fetch");
+
+    const openPermissionsEdit = (r: Role) => {
+        setPermissionsRole(r);
+        setSelectedPermissionKeys(r.permissionKeys.filter((k) => k !== "gdms.fetch"));
+        setShowPermissionsModal(true);
+    };
+
+    const togglePermissionKey = (key: string) => {
+        setSelectedPermissionKeys((prev) =>
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+        );
+    };
+
+    const handleSavePermissions = async () => {
+        if (!permissionsRole) return;
+        setError("");
+        setSaving(true);
+        try {
+            await apiPatch(`/api/data/roles/${permissionsRole.id}/permissions`, {
+                permissionKeys: selectedPermissionKeys,
+            });
+            setShowPermissionsModal(false);
+            setPermissionsRole(null);
+            fetchRoles();
+            await updateSession(); // refresh own permissions if this is the current user's role
+        } catch (err: any) {
+            setError(err?.message || "Failed to save permissions");
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -320,6 +384,9 @@ export default function DataPage() {
                                                         <td className="py-3 font-medium text-slate-900">{r.name}</td>
                                                         <td className="py-3 text-right">
                                                             {canEditData && (
+                                                                <button onClick={() => openPermissionsEdit(r)} aria-label={`Edit permissions for ${r.name}`} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><KeyRound className="w-4 h-4" /></button>
+                                                            )}
+                                                            {canEditData && (
                                                                 <button onClick={() => openRoleEdit(r)} aria-label={`Edit role ${r.name}`} className="p-2 text-slate-400 hover:text-blue-600 rounded-lg"><Pencil className="w-4 h-4" /></button>
                                                             )}
                                                             {canEditData && (
@@ -470,6 +537,50 @@ export default function DataPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Permissions modal */}
+            {showPermissionsModal && permissionsRole && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                    <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[85vh] flex flex-col">
+                        <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-lg font-bold text-slate-900">Permissions — {permissionsRole.name}</h3>
+                            <button onClick={() => setShowPermissionsModal(false)} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-1">
+                            Users with this role must log out and back in to pick up permission changes.
+                        </p>
+                        <p className="text-xs text-slate-500 mb-4">
+                            GDMS access is granted per user in User Management, not here.
+                        </p>
+                        <div className="space-y-1 overflow-y-auto pr-1 flex-1">
+                            {roleAssignablePermissions.map((p) => (
+                                <label
+                                    key={p.id}
+                                    className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedPermissionKeys.includes(p.key)}
+                                        onChange={() => togglePermissionKey(p.key)}
+                                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-slate-800">{permissionLabel(p.key)}</span>
+                                </label>
+                            ))}
+                            {permissions.length === 0 && (
+                                <p className="text-slate-500 text-sm py-4">No permissions found.</p>
+                            )}
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+                            <button type="button" onClick={() => setShowPermissionsModal(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold">Cancel</button>
+                            <button type="button" onClick={handleSavePermissions} disabled={saving} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold disabled:opacity-50 flex items-center gap-2">
+                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                Save
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

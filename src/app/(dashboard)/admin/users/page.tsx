@@ -16,6 +16,7 @@ type UserRow = {
     branch?: { id: string; name: string } | null;
     branchId?: string | null;
     branches?: { branchId: string }[];
+    gdmsAccess: boolean;
 };
 
 type Role = { id: string; name: string };
@@ -44,6 +45,7 @@ export default function UserManagementPage() {
         roleId: "",
         branchIds: [] as string[],
         active: true,
+        gdmsAccess: false,
     });
     const [editSaving, setEditSaving] = useState(false);
     const [editError, setEditError] = useState("");
@@ -113,6 +115,7 @@ export default function UserManagementPage() {
                 (editingUser.branches?.map((b) => b.branchId).filter(Boolean) as string[]) ??
                 ((editingUser.branchId ?? editingUser.branch?.id) ? [String(editingUser.branchId ?? editingUser.branch?.id)] : []),
             active: editingUser.active,
+            gdmsAccess: editingUser.gdmsAccess,
         });
         setEditError("");
     }, [editingUser]);
@@ -136,6 +139,7 @@ export default function UserManagementPage() {
                 roleId: editForm.roleId,
                 branchIds: editForm.branchIds,
                 active: editForm.active,
+                gdmsAccess: editForm.gdmsAccess,
             });
             setEditingUser(null);
             await fetchUsers();
@@ -917,6 +921,21 @@ export default function UserManagementPage() {
                                     className="rounded border-slate-300"
                                 />
                                 <label htmlFor="edit-active" className="text-sm font-medium text-slate-700">Active</label>
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="edit-gdms-access"
+                                        checked={editForm.gdmsAccess}
+                                        onChange={(e) => setEditForm((f) => ({ ...f, gdmsAccess: e.target.checked }))}
+                                        className="rounded border-slate-300"
+                                    />
+                                    <label htmlFor="edit-gdms-access" className="text-sm font-medium text-slate-700">GDMS credentials access</label>
+                                </div>
+                                <p className="mt-1 text-xs text-slate-500">
+                                    Grants this specific user the GDMS Credentials page, regardless of their role. Takes effect next time they log in.
+                                </p>
                             </div>
                             <div className="flex gap-2 pt-2">
                                 <button

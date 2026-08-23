@@ -41,6 +41,7 @@ type MonthRow = {
     delivered: number;
     avgTat: number;
     labor: number;
+    parts: number;
 };
 
 type Analytics = {
@@ -90,6 +91,13 @@ const DIMENSIONS: { key: DimKey; label: string; icon: typeof Building2 }[] = [
 const num = (n: number) => new Intl.NumberFormat("en-IN").format(n || 0);
 const currency = (n: number) =>
     new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n || 0);
+const compactCurrency = (n: number) =>
+    new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        notation: "compact",
+        maximumFractionDigits: 1,
+    }).format(n || 0);
 
 type CategoryFilter = "all" | "bodyshop" | "service";
 const CATEGORIES: { id: CategoryFilter; label: string }[] = [
@@ -390,6 +398,21 @@ export default function AnalyticsClient() {
                 <MonthlyChart months={data?.monthly ?? []} loading={loading} />
             </div>
 
+            {/* Billing trend: Labour vs Parts */}
+            <div className="panel-surface rounded-2xl p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-900">Billing Trend</h2>
+                        <p className="text-xs text-slate-500">Labour vs parts billed, per month</p>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                        <Legend color="bg-teal-500" label="Labour" />
+                        <Legend color="bg-orange-500" label="Parts" />
+                    </div>
+                </div>
+                <MonthlyBillingChart months={data?.monthly ?? []} loading={loading} />
+            </div>
+
             {/* Status + Aging — split by category: Bodyshop's 18-stage workflow and
                 Service's 2-stage workflow don't share a stage vocabulary, so each gets
                 its own panel instead of being lumped into one mixed chart. */}
@@ -472,6 +495,20 @@ export default function AnalyticsClient() {
                 <p className="text-[11px] text-slate-400 -mt-2 mb-3">
                     Open reflects current status; Total, Delivered, Avg TAT, Labour &amp; Parts reflect the selected date range.
                 </p>
+
+                <div className="mb-5">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                            Billing by {DIMENSIONS.find((d) => d.key === dim)?.label}
+                        </h3>
+                        <div className="flex items-center gap-3 text-xs">
+                            <Legend color="bg-teal-500" label="Labour" />
+                            <Legend color="bg-orange-500" label="Parts" />
+                        </div>
+                    </div>
+                    <BillingBarList rows={rows} loading={loading} />
+                </div>
+
                 <BreakdownTable rows={rows} loading={loading} />
             </div>
         </div>
@@ -607,20 +644,118 @@ function BarColumn({
     value,
     heightPx,
     barClass,
+    label,
+    title,
 }: {
     value: number;
     heightPx: number;
     barClass: string;
+    label?: string;
+    title?: string;
 }) {
     return (
-        <div className="flex flex-col items-center justify-end h-full">
-            <span className="mb-1 text-[11px] font-bold text-slate-700 tabular-nums leading-none">
-                {value}
+        <div className="flex flex-col items-center justify-end h-full" title={title}>
+            <span className="mb-1 text-[11px] font-bold text-slate-700 tabular-nums leading-none whitespace-nowrap">
+                {label ?? value}
             </span>
             <div
                 className={cn("w-6 rounded-t-md transition-all duration-500", value > 0 ? barClass : "bg-slate-200")}
                 style={{ height: `${Math.max(heightPx, value > 0 ? heightPx : 3)}px` }}
             />
+        </div>
+    );
+}
+
+function MonthlyBillingChart({ months, loading }: { months: MonthRow[]; loading?: boolean }) {
+    if (loading) return <div className="h-64 rounded-xl bg-slate-50 animate-pulse" />;
+    if (months.length === 0) return <EmptyState label="No data in this range" height="h-64" />;
+
+    const TRACK = 200; // px height of the plot area
+    const maxAmount = Math.max(1, ...months.map((m) => Math.max(m.labor, m.parts)));
+    const barPx = (v: number) => (v > 0 ? Math.max(4, Math.round((v / maxAmount) * TRACK)) : 0);
+
+    return (
+        <div className="w-full overflow-x-auto custom-scrollbar pb-1">
+            <div
+                className="flex items-end justify-center gap-5 sm:gap-7 min-w-full px-2"
+                style={{ minHeight: TRACK + 40 }}
+            >
+                {months.map((m) => (
+                    <div key={m.month} className="flex flex-col items-center shrink-0" style={{ width: 64 }}>
+                        {/* Plot area */}
+                        <div className="flex items-end justify-center gap-1.5" style={{ height: TRACK }}>
+                            <BarColumn
+                                value={m.labor}
+                                heightPx={barPx(m.labor)}
+                                barClass="bg-teal-500"
+                                label={compactCurrency(m.labor)}
+                                title={`Labour · ${currency(m.labor)}`}
+                            />
+                            <BarColumn
+                                value={m.parts}
+                                heightPx={barPx(m.parts)}
+                                barClass="bg-orange-500"
+                                label={compactCurrency(m.parts)}
+                                title={`Parts · ${currency(m.parts)}`}
+                            />
+                        </div>
+                        {/* Axis label */}
+                        <div className="mt-2 text-center">
+                            <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">{m.label}</div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function BillingBarList({ rows, loading }: { rows: BreakdownRow[]; loading?: boolean }) {
+    if (loading)
+        return (
+            <div className="space-y-2.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="h-7 rounded-lg bg-slate-50 animate-pulse" />
+                ))}
+            </div>
+        );
+    if (rows.length === 0) return <EmptyState label="No data" height="h-40" />;
+
+    const top = rows.slice(0, 8);
+    const maxTotalAmount = Math.max(1, ...top.map((r) => r.labourAmount + r.partsAmount));
+
+    return (
+        <div className="space-y-2.5">
+            {top.map((r) => {
+                const totalAmount = r.labourAmount + r.partsAmount;
+                const trackWidth = (totalAmount / maxTotalAmount) * 100;
+                const labourShare = totalAmount > 0 ? (r.labourAmount / totalAmount) * 100 : 0;
+                const partsShare = totalAmount > 0 ? (r.partsAmount / totalAmount) * 100 : 0;
+                return (
+                    <div key={r.key} className="group">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium text-slate-700 truncate pr-2">{r.label}</span>
+                            <span className="text-slate-400 tabular-nums shrink-0">{currency(totalAmount)}</span>
+                        </div>
+                        <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden flex" style={{ width: `${trackWidth}%`, minWidth: totalAmount > 0 ? "2%" : 0 }}>
+                            {r.labourAmount > 0 && (
+                                <div
+                                    className="h-full bg-teal-500 first:rounded-l-full"
+                                    style={{ width: `${labourShare}%` }}
+                                    title={`Labour · ${currency(r.labourAmount)}`}
+                                />
+                            )}
+                            {r.partsAmount > 0 && (
+                                <div
+                                    className="h-full bg-orange-500 last:rounded-r-full"
+                                    style={{ width: `${partsShare}%`, marginLeft: r.labourAmount > 0 ? 2 : 0 }}
+                                    title={`Parts · ${currency(r.partsAmount)}`}
+                                />
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

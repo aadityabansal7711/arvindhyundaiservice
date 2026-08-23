@@ -31,11 +31,17 @@ export async function GET(_req: NextRequest) {
                 role: { select: { id: true, name: true } },
                 branch: { select: { id: true, name: true } },
                 branches: { select: { branchId: true } },
+                permissions: { select: { permission: { select: { key: true } } } },
             },
             orderBy: { createdAt: "desc" },
         });
 
-        return NextResponse.json(users);
+        const result = users.map(({ permissions, ...u }) => ({
+            ...u,
+            gdmsAccess: permissions.some((p) => p.permission.key === "gdms.fetch"),
+        }));
+
+        return NextResponse.json(result);
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

@@ -37,6 +37,7 @@ type MonthRow = {
     delivered: number;
     avgTat: number;
     labor: number;
+    parts: number;
 };
 
 function parseDay(value: string | null | undefined): Date | null {
@@ -210,6 +211,7 @@ export async function GET(req: NextRequest) {
                 delivered: 0,
                 avgTat: 0,
                 labor: 0,
+                parts: 0,
             });
         }
         const monthTats = new Map<string, number[]>();
@@ -221,6 +223,7 @@ export async function GET(req: NextRequest) {
                 if (row) {
                     row.created += 1;
                     row.labor += Number(job.billed_labor_amount) || 0;
+                    row.parts += Number(job.billed_parts_amount) || 0;
                 }
             }
             if (job.status_section === "Delivered") {

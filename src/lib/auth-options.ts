@@ -54,6 +54,9 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 // One narrow query keeps login from waiting on several remote DB roundtrips.
+                // "permissions" unions role-granted keys with per-user override grants
+                // (UserPermission) — e.g. one specific user given gdms.fetch without
+                // opening it up to everyone who shares their role.
                 const [user] = await prisma.$queryRaw<LoginUserRow[]>`
                     select
                         u.id,
@@ -64,14 +67,22 @@ export const authOptions: NextAuthOptions = {
                         r.name as "roleName",
                         u."branchId" as "branchId",
                         coalesce(array_remove(array_agg(distinct ub."branchId"), null), array[]::text[]) as "branchIds",
-                        coalesce(array_remove(array_agg(distinct p.key), null), array[]::text[]) as permissions
+                        coalesce((
+                            select array_agg(distinct combined.key) from (
+                                select p.key from "RolePermission" rp
+                                join "Permission" p on p.id = rp."permissionId"
+                                where rp."roleId" = r.id
+                                union
+                                select p2.key from "UserPermission" up
+                                join "Permission" p2 on p2.id = up."permissionId"
+                                where up."userId" = u.id
+                            ) as combined
+                        ), array[]::text[]) as permissions
                     from "User" u
                     join "Role" r on r.id = u."roleId"
                     left join "UserBranch" ub on ub."userId" = u.id
-                    left join "RolePermission" rp on rp."roleId" = r.id
-                    left join "Permission" p on p.id = rp."permissionId"
                     where u.email = ${email}
-                    group by u.id, r.name
+                    group by u.id, r.id, r.name
                     limit 1
                 `;
 
