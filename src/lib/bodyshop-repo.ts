@@ -5,6 +5,7 @@ import { BODYSHOP_JOBS_SEED, STATUS_SECTION_ORDER } from "./bodyshop-seed";
 import { SERVICE_STATUS_SECTION_ORDER } from "./service-seed";
 
 const TABLE_NAME = "bodyshop_jobs";
+const SUPABASE_PAGE_SIZE = 1000;
 
 type ListParams = {
   search?: string;
@@ -90,38 +91,56 @@ export async function listBodyshopJobs(
     return [];
   }
 
-  // Try Supabase first.
-  let query = supabaseAdmin
-    .from(TABLE_NAME)
-    .select(select && select.trim().length > 0 ? select : "*")
-    .order("ro_date", { ascending: false })
-    .limit(limit);
+  const pageSize = Math.min(SUPABASE_PAGE_SIZE, Math.max(1, limit));
+  const pages = Math.ceil(limit / pageSize);
+  const data: BodyshopJob[] = [];
+  let error: { message: string } | null = null;
 
-  if (jobCategory !== "all") {
-    query = query.eq("job_category", jobCategory);
+  // Try Supabase first. Supabase/PostgREST can cap a single response at 1,000
+  // rows, so analytics-sized reads must page explicitly or "Both" totals only
+  // reflect the first chunk of the shared bodyshop_jobs table.
+  for (let page = 0; page < pages; page += 1) {
+    const from = page * pageSize;
+    const to = Math.min(from + pageSize - 1, limit - 1);
+    let query = supabaseAdmin
+      .from(TABLE_NAME)
+      .select(select && select.trim().length > 0 ? select : "*")
+      .order("ro_date", { ascending: false })
+      .range(from, to);
+
+    if (jobCategory !== "all") {
+      query = query.eq("job_category", jobCategory);
+    }
+
+    if (statusSection && statusSection !== "All") {
+      query = query.eq("status_section", statusSection);
+    }
+
+    if (branchIds && branchIds.length > 0) {
+      query = query.in("branch_id", branchIds);
+    }
+
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`;
+      query = query.or(
+        [
+          `ro_no.ilike.${term}`,
+          `reg_no.ilike.${term}`,
+          `customer_name.ilike.${term}`,
+          `model.ilike.${term}`,
+        ].join(",")
+      );
+    }
+
+    const pageResult = await query;
+    if (pageResult.error) {
+      error = pageResult.error;
+      break;
+    }
+    const pageData = (pageResult.data ?? []) as unknown as BodyshopJob[];
+    data.push(...pageData);
+    if (pageData.length < pageSize) break;
   }
-
-  if (statusSection && statusSection !== "All") {
-    query = query.eq("status_section", statusSection);
-  }
-
-  if (branchIds && branchIds.length > 0) {
-    query = query.in("branch_id", branchIds);
-  }
-
-  if (search && search.trim()) {
-    const term = `%${search.trim()}%`;
-    query = query.or(
-      [
-        `ro_no.ilike.${term}`,
-        `reg_no.ilike.${term}`,
-        `customer_name.ilike.${term}`,
-        `model.ilike.${term}`,
-      ].join(",")
-    );
-  }
-
-  const { data, error } = await query;
 
   if (error) {
     console.warn("[bodyshop] Supabase query failed, falling back to seed:", error.message);
@@ -153,7 +172,7 @@ export async function listBodyshopJobs(
     return filtered.map(addMeta);
   }
 
-  return (data ?? []).map((row) => {
+  return data.map((row) => {
     const raw = row as unknown as BodyshopJob;
     const rowCategory = resolveJobCategory((raw as { job_category?: unknown }).job_category);
     return addMeta({

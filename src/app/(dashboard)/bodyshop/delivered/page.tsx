@@ -11,8 +11,10 @@ import { PhotoPreviewModal, type PhotoPreviewState } from "@/components/bodyshop
 import { BranchFilter } from "@/components/bodyshop/branch-filter";
 import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
 import { getWorkTypeLabel } from "@/lib/gdms/mapper";
+import { formatMovementTime } from "@/lib/movement-time";
 
 type Branch = { id: string; name: string };
+const DELIVERED_LIST_LIMIT = 6000;
 
 type StageHistoryRow = {
   id: string;
@@ -108,7 +110,7 @@ function DeliveredPageInner() {
         openOnly: "0",
         statusSection: "Delivered",
         view: "board",
-        limit: "500",
+        limit: String(DELIVERED_LIST_LIMIT),
       });
       if (term.trim()) params.set("search", term.trim());
       const data = await apiGet<BodyshopJobWithMeta[]>(
@@ -544,7 +546,7 @@ function DeliveredPageInner() {
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1">
                               {row.changed_at
-                                ? format(new Date(row.changed_at), "dd MMM yyyy, HH:mm")
+                                ? formatMovementTime(row.changed_at, row.remark)
                                 : "—"}
                             </div>
                           </div>

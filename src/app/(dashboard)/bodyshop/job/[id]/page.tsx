@@ -9,6 +9,7 @@ import { Calendar, FileText, Save } from "lucide-react";
 import { apiGet, apiPatch } from "@/lib/api";
 import type { BodyshopJobWithMeta, StatusSection } from "@/lib/bodyshop-types";
 import { STATUS_SECTION_ORDER } from "@/lib/bodyshop-seed";
+import { formatMovementTime } from "@/lib/movement-time";
 
 interface StageHistory {
   id: string;
@@ -371,7 +372,7 @@ export default function BodyshopJobDetailPage() {
                         {s.from_status ?? "New"} → {s.to_status}
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        {format(new Date(s.changed_at), "dd MMM yyyy, HH:mm")}
+                        {formatMovementTime(s.changed_at, s.remark)}
                       </span>
                       {s.remark && (
                         <span className="text-[11px] text-slate-500">

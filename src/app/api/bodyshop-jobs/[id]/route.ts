@@ -14,6 +14,7 @@ import {
   validateMutationRequest,
 } from "@/lib/server-auth";
 import { isOwnerUser } from "@/lib/owner-access";
+import { movementLocalInputToIso } from "@/lib/movement-time";
 
 // Ensure the job detail (including photos array) is never served stale.
 export const dynamic = "force-dynamic";
@@ -248,14 +249,13 @@ export async function PATCH(
     typeof body.movement_at === "string" ? body.movement_at.trim() : "";
   let changed_at: string | null = null;
   if (movement_at_raw) {
-    const movementDate = new Date(movement_at_raw);
-    if (Number.isNaN(movementDate.getTime())) {
+    changed_at = movementLocalInputToIso(movement_at_raw);
+    if (!changed_at) {
       return NextResponse.json(
         { error: "Invalid movement_at. Expected datetime-local value." },
         { status: 400 }
       );
     }
-    changed_at = movementDate.toISOString();
   }
 
   const needsPhotos =

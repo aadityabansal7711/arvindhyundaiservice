@@ -26,6 +26,7 @@ import {
 import { isOwnerUser } from "@/lib/owner-access";
 import { getRoPrefixForBranchName, RO_PREFIX_SEPARATOR } from "@/lib/ro-prefix";
 import { getWorkTypeLabel } from "@/lib/gdms/mapper";
+import { formatMovementTime } from "@/lib/movement-time";
 
 type DropdownOption = { id: string; label: string; value: string; branchId?: string | null };
 type Branch = { id: string; name: string };
@@ -1499,7 +1500,7 @@ function BodyshopDashboardPageInner() {
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1">
                               {row.changed_at
-                                ? format(new Date(row.changed_at), "dd MMM yyyy, HH:mm")
+                                ? formatMovementTime(row.changed_at, row.remark)
                                 : "—"}
                             </div>
                           </div>

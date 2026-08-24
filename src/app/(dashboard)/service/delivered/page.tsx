@@ -9,8 +9,10 @@ import { apiDelete, apiGet } from "@/lib/api";
 import { BranchFilter } from "@/components/bodyshop/branch-filter";
 import type { BodyshopJobWithMeta } from "@/lib/bodyshop-types";
 import { getWorkTypeLabel } from "@/lib/gdms/mapper";
+import { formatMovementTime } from "@/lib/movement-time";
 
 type Branch = { id: string; name: string };
+const DELIVERED_LIST_LIMIT = 6000;
 
 type StageHistoryRow = {
   id: string;
@@ -47,7 +49,7 @@ function ServiceDeliveredPageInner() {
         openOnly: "0",
         statusSection: "Delivered",
         view: "board",
-        limit: "500",
+        limit: String(DELIVERED_LIST_LIMIT),
         category: "service",
       });
       if (term.trim()) params.set("search", term.trim());
@@ -333,7 +335,7 @@ function ServiceDeliveredPageInner() {
                               {row.from_status ?? "New"} → {row.to_status}
                             </div>
                             <div className="text-[11px] text-slate-500 mt-1">
-                              {row.changed_at ? format(new Date(row.changed_at), "dd MMM yyyy, HH:mm") : "—"}
+                              {row.changed_at ? formatMovementTime(row.changed_at, row.remark) : "—"}
                             </div>
                           </div>
                           <div>
