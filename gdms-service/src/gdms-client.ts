@@ -139,10 +139,25 @@ export async function startLogin(params: {
     });
     console.log("[GDMS] Login URL committed, waiting for the form to render...");
 
-    await page.locator(GDMS_SELECTORS.usrId).waitFor({
-      state: "visible",
-      timeout: GDMS_LOGIN_FORM_VISIBLE_TIMEOUT_MS,
-    });
+    try {
+      await page.locator(GDMS_SELECTORS.usrId).waitFor({
+        state: "visible",
+        timeout: GDMS_LOGIN_FORM_VISIBLE_TIMEOUT_MS,
+      });
+    } catch (waitErr) {
+      // Debug-only: dump what GDMS actually served so a CAPTCHA/block page
+      // can be told apart from a genuinely slow-loading real login page.
+      const title = await page.title().catch(() => "<title read failed>");
+      const bodyText = await page
+        .locator("body")
+        .innerText()
+        .then((t) => t.replace(/\s+/g, " ").trim().slice(0, 500))
+        .catch(() => "<body read failed>");
+      console.error(
+        `[GDMS] #usrId never became visible. url=${page.url()} title="${title}" bodySnippet="${bodyText}"`
+      );
+      throw waitErr;
+    }
     console.log("[GDMS] Username field visible");
 
     await page.fill(GDMS_SELECTORS.usrId, params.gdmsUserId);
