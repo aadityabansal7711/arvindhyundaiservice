@@ -126,6 +126,12 @@ export async function startLogin(params: {
   try {
     await verifyProxyEgressConsistency(page, context, "before-send-otp");
 
+    const pageErrors: string[] = [];
+    page.on("pageerror", (e) => pageErrors.push(`pageerror: ${e.message}`));
+    page.on("requestfailed", (r) =>
+      pageErrors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText ?? ""}`)
+    );
+
     console.log(`[GDMS] Opening login page for branch ${params.branchId}...`);
     // "commit" resolves as soon as the response headers arrive, rather than
     // waiting for the full document + its scripts to finish loading — GDMS's
@@ -147,14 +153,19 @@ export async function startLogin(params: {
     } catch (waitErr) {
       // Debug-only: dump what GDMS actually served so a CAPTCHA/block page
       // can be told apart from a genuinely slow-loading real login page.
-      const title = await page.title().catch(() => "<title read failed>");
-      const bodyText = await page
-        .locator("body")
-        .innerText()
-        .then((t) => t.replace(/\s+/g, " ").trim().slice(0, 500))
-        .catch(() => "<body read failed>");
+      const title = await page.title().catch((e) => `<title read failed: ${e}>`);
+      const usrIdCount = await page
+        .locator(GDMS_SELECTORS.usrId)
+        .count()
+        .catch((e) => -1);
+      const html = await page
+        .content()
+        .then((h) => h.replace(/\s+/g, " ").trim().slice(0, 1000))
+        .catch((e) => `<content read failed: ${e}>`);
       console.error(
-        `[GDMS] #usrId never became visible. url=${page.url()} title="${title}" bodySnippet="${bodyText}"`
+        `[GDMS] #usrId never became visible. url=${page.url()} title="${title}" ` +
+          `usrIdCountInDom=${usrIdCount} pageErrors=${JSON.stringify(pageErrors.slice(0, 10))} ` +
+          `htmlSnippet="${html}"`
       );
       throw waitErr;
     }
