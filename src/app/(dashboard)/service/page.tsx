@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
 import { Plus, Search, X } from "lucide-react";
@@ -72,6 +72,7 @@ function ServiceDashboardPageInner() {
   });
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const router = useRouter();
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didFetchOnceRef = useRef(false);
@@ -134,6 +135,26 @@ function ServiceDashboardPageInner() {
       setActiveStage("All");
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const branchParam = searchParams.get("branch");
+    setActiveBranch(branchParam && branchParam.trim() ? branchParam : "All");
+  }, [searchParams]);
+
+  const selectBranch = useCallback(
+    (branchId: string) => {
+      setActiveBranch(branchId);
+      const params = new URLSearchParams(searchParams.toString());
+      if (branchId === "All") {
+        params.delete("branch");
+      } else {
+        params.set("branch", branchId);
+      }
+      const qs = params.toString();
+      router.push(qs ? `/service?${qs}` : "/service");
+    },
+    [router, searchParams]
+  );
 
   const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
@@ -344,7 +365,7 @@ function ServiceDashboardPageInner() {
                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
                   />
                 </div>
-                <BranchFilter branches={branches} value={activeBranch} onChange={setActiveBranch} />
+                <BranchFilter branches={branches} value={activeBranch} onChange={selectBranch} />
                 <button
                   type="button"
                   onClick={() => {

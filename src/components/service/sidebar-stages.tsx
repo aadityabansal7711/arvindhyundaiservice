@@ -17,6 +17,8 @@ export function ServiceSidebarStages() {
     stageParam && SERVICE_STATUS_SECTION_ORDER.includes(stageParam as ServiceStatusSection)
       ? (stageParam as ServiceStatusSection)
       : "All";
+  const branchParam = searchParams.get("branch");
+  const activeBranch = branchParam && branchParam.trim() ? branchParam : "All";
 
   const [counts, setCounts] = useState<CountsResponse | null>(null);
 
@@ -24,14 +26,17 @@ export function ServiceSidebarStages() {
     let cancelled = false;
     let inFlight = false;
     let lastFetchAt = 0;
-    const fetchCounts = () =>
-      apiGet<CountsResponse>("/api/bodyshop-jobs?openOnly=1&countsOnly=1&category=service", { cacheMs: 15_000 })
+    const fetchCounts = () => {
+      const params = new URLSearchParams({ openOnly: "1", countsOnly: "1", category: "service" });
+      if (activeBranch !== "All") params.set("branchId", activeBranch);
+      return apiGet<CountsResponse>(`/api/bodyshop-jobs?${params.toString()}`, { cacheMs: 15_000 })
         .then((data) => {
           if (!cancelled) setCounts(data);
         })
         .catch(() => {
           if (!cancelled) setCounts({ all: 0, stages: {} });
         });
+    };
 
     const doFetch = async () => {
       if (cancelled) return;
@@ -70,14 +75,14 @@ export function ServiceSidebarStages() {
       clearInterval(poll);
       window.removeEventListener("service:counts-refresh", onLocalRefresh);
     };
-  }, []);
+  }, [activeBranch]);
 
   const selectStage = (stage: ServiceStatusSection | "All") => {
-    if (stage === "All") {
-      router.push("/service");
-    } else {
-      router.push(`/service?stage=${encodeURIComponent(stage)}`);
-    }
+    const params = new URLSearchParams();
+    if (activeBranch !== "All") params.set("branch", activeBranch);
+    if (stage !== "All") params.set("stage", stage);
+    const qs = params.toString();
+    router.push(qs ? `/service?${qs}` : "/service");
   };
 
   const stagesToList = SERVICE_STATUS_SECTION_ORDER.filter((s) => s !== "Delivered");

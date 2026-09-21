@@ -17,6 +17,8 @@ export function SidebarStages() {
     stageParam && STATUS_SECTION_ORDER.includes(stageParam as StatusSection)
       ? (stageParam as StatusSection)
       : "All";
+  const branchParam = searchParams.get("branch");
+  const activeBranch = branchParam && branchParam.trim() ? branchParam : "All";
 
   const [counts, setCounts] = useState<CountsResponse | null>(null);
 
@@ -24,14 +26,17 @@ export function SidebarStages() {
     let cancelled = false;
     let inFlight = false;
     let lastFetchAt = 0;
-    const fetchCounts = () =>
-      apiGet<CountsResponse>("/api/bodyshop-jobs?openOnly=1&countsOnly=1", { cacheMs: 15_000 })
+    const fetchCounts = () => {
+      const params = new URLSearchParams({ openOnly: "1", countsOnly: "1" });
+      if (activeBranch !== "All") params.set("branchId", activeBranch);
+      return apiGet<CountsResponse>(`/api/bodyshop-jobs?${params.toString()}`, { cacheMs: 15_000 })
         .then((data) => {
           if (!cancelled) setCounts(data);
         })
         .catch(() => {
           if (!cancelled) setCounts({ all: 0, stages: {} });
         });
+    };
 
     // Initial load
     const doFetch = async () => {
@@ -73,14 +78,14 @@ export function SidebarStages() {
       clearInterval(poll);
       window.removeEventListener("bodyshop:counts-refresh", onLocalRefresh);
     };
-  }, []);
+  }, [activeBranch]);
 
   const selectStage = (stage: StatusSection | "All") => {
-    if (stage === "All") {
-      router.push("/bodyshop");
-    } else {
-      router.push(`/bodyshop?stage=${encodeURIComponent(stage)}`);
-    }
+    const params = new URLSearchParams();
+    if (activeBranch !== "All") params.set("branch", activeBranch);
+    if (stage !== "All") params.set("stage", stage);
+    const qs = params.toString();
+    router.push(qs ? `/bodyshop?${qs}` : "/bodyshop");
   };
 
   const stagesToList = STATUS_SECTION_ORDER.filter((s) => s !== "Delivered");

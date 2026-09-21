@@ -59,7 +59,13 @@ function getAllowedNextStatuses(
     return ["Delivered"];
   }
   const idx = (STATUS_SECTION_ORDER as readonly string[]).indexOf(current);
-  if (idx < 0 || idx >= STATUS_SECTION_ORDER.length - 1) return [];
+  // A value this board's own order doesn't recognize (e.g. a job reclassified
+  // from the Service board still carrying a Service-only stage like "Job
+  // Open") isn't "already at the last stage" — treat it like having no stage
+  // yet, so it can still be moved onto this board's own flow instead of being
+  // permanently stuck with no allowed next stage at all.
+  if (idx < 0) return [...STATUS_SECTION_ORDER];
+  if (idx >= STATUS_SECTION_ORDER.length - 1) return [];
   return [STATUS_SECTION_ORDER[idx + 1]];
 }
 
@@ -69,7 +75,11 @@ function getAllowedNextServiceStatuses(
 ): ServiceStatusSection[] {
   if (!current) return [SERVICE_STATUS_SECTION_ORDER[0]];
   const idx = (SERVICE_STATUS_SECTION_ORDER as readonly string[]).indexOf(current);
-  if (idx < 0 || idx >= SERVICE_STATUS_SECTION_ORDER.length - 1) return [];
+  // Same reasoning as getAllowedNextStatuses: an unrecognized stage (e.g. a
+  // Bodyshop-only stage left over from before reclassification) shouldn't
+  // dead-end the record — let it move anywhere on this board's own flow.
+  if (idx < 0) return [...SERVICE_STATUS_SECTION_ORDER];
+  if (idx >= SERVICE_STATUS_SECTION_ORDER.length - 1) return [];
   return [SERVICE_STATUS_SECTION_ORDER[idx + 1]];
 }
 

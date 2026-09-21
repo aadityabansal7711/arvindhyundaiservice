@@ -112,12 +112,13 @@ export async function GET(request: NextRequest) {
   const branchScope = await getBranchScopeForSessionUser(user);
   const allowedBranchIds = branchScope.kind === "all" ? undefined : branchScope.ids;
   const restrictByBranch = branchScope.kind !== "all";
-  const effectiveBranchIds =
-    !restrictByBranch
-      ? undefined
-      : branchIdParam && allowedBranchIds && allowedBranchIds.includes(branchIdParam)
-        ? [branchIdParam]
-        : allowedBranchIds ?? [];
+  const effectiveBranchIds = restrictByBranch
+    ? branchIdParam && allowedBranchIds && allowedBranchIds.includes(branchIdParam)
+      ? [branchIdParam]
+      : allowedBranchIds ?? []
+    : branchIdParam
+      ? [branchIdParam]
+      : undefined;
 
   if (effectiveBranchIds !== undefined && effectiveBranchIds.length === 0) {
     if (countsOnly) {

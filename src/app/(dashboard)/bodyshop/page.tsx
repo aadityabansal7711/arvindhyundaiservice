@@ -330,6 +330,27 @@ function BodyshopDashboardPageInner() {
     }
   }, [searchParams]);
 
+  // Sync activeBranch with URL so the sidebar's counts can be scoped to the same branch
+  useEffect(() => {
+    const branchParam = searchParams.get("branch");
+    setActiveBranch(branchParam && branchParam.trim() ? branchParam : "All");
+  }, [searchParams]);
+
+  const selectBranch = useCallback(
+    (branchId: string) => {
+      setActiveBranch(branchId);
+      const params = new URLSearchParams(searchParams.toString());
+      if (branchId === "All") {
+        params.delete("branch");
+      } else {
+        params.set("branch", branchId);
+      }
+      const qs = params.toString();
+      router.push(qs ? `/bodyshop?${qs}` : "/bodyshop");
+    },
+    [router, searchParams]
+  );
+
   const fetchJobs = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
@@ -752,7 +773,7 @@ function BodyshopDashboardPageInner() {
                     className="focus-ring w-full pl-10 pr-4 py-2.5 bg-slate-50/90 border border-slate-200 rounded-xl text-sm focus:bg-white"
                   />
                 </div>
-                <BranchFilter branches={branches} value={activeBranch} onChange={setActiveBranch} />
+                <BranchFilter branches={branches} value={activeBranch} onChange={selectBranch} />
                 {canFetchGdms && (
                   <button
                     type="button"
